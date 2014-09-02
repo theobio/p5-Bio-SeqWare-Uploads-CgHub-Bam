@@ -1,8 +1,10 @@
 package Bio::SeqWare::Uploads::CgHub::Bam;
 
-use 5.014;
-use strict;
-use warnings FATAL => 'all';
+use 5.014;         # Eval $@ safe to use.
+use strict;        # Don't allow unsafe perl constructs.
+use warnings       # Enable all optional warnings
+   FATAL => 'all';      # Make all warnings fatal.
+use autodie;       # Make core perl die on errors instead of returning undef.
 
 =head1 NAME
 
@@ -16,42 +18,39 @@ Version 0.000.001
 
 our $VERSION = '0.000001';
 
-
 =head1 SYNOPSIS
-
-Quick summary of what the module does.
-
-Perhaps a little code snippet.
 
     use Bio::SeqWare::Uploads::CgHub::Bam;
 
-    my $foo = Bio::SeqWare::Uploads::CgHub::Bam->new();
-    ...
-
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
-
-=head1 SUBROUTINES/METHODS
-
-=head2 function1
+    my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
 
 =cut
 
-sub function1 {
-}
-
-=head2 function2
+=head1 CLASS METHODS
 
 =cut
 
-sub function2 {
+=head2 new()
+
+    my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
+
+Creates and returns a Bio::SeqWare::Uploads::CgHub::Bam object.
+
+=cut
+
+sub new {
+    my $class = shift;
+    my $paramHR = shift;
+
+    my $self = {};
+    bless $self, $class;
 }
 
 =head1 AUTHOR
 
 Stuart R. Jefferys, C<< <srjefferys (at) gmail (dot) com> >>
+
+=cut
 
 =head1 BUGS
 
@@ -59,8 +58,7 @@ Please report any bugs or feature requests to C<bug-p5-bio-seqware-uploads-cghub
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=p5-Bio-SeqWare-Uploads-CgHub-Bam>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
 
-
-
+=cut
 
 =head1 SUPPORT
 
@@ -91,9 +89,11 @@ L<http://search.cpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam/>
 
 =back
 
+=cut
 
 =head1 ACKNOWLEDGEMENTS
 
+=cut
 
 =head1 LICENSE AND COPYRIGHT
 
@@ -112,7 +112,6 @@ GNU General Public License for more details.
 A copy of the GNU General Public License is available in the source tree;
 if not, write to the Free Software Foundation, Inc.,
 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
-
 
 =cut
 
