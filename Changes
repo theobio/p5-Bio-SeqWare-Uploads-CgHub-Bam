@@ -2,3 +2,5 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
 0.000.001
  [MAJOR] - Initial release of package skeleton.
+ [API] - Added new() method to create Bam object.
+ [DOC} - Added Basic boilerplate text.
