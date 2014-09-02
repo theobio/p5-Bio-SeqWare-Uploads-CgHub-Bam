@@ -34,7 +34,9 @@ our $VERSION = '0.000001';
 
     my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
 
-Creates and returns a Bio::SeqWare::Uploads::CgHub::Bam object.
+Creates and returns a Bio::SeqWare::Uploads::CgHub::Bam object. Either returns
+an object of class Bio::Seqware::Uploads::CgHub::Bam or dies with an error
+message.
 
 =cut
 
@@ -46,6 +48,22 @@ sub new {
     bless $self, $class;
 }
 
+=head1 INSTANCE METHODS
+
+=cut
+
+=head2 run()
+
+    $obj->run()
+
+Implements the actions taken when run as an application. Currently only
+returns 1 if succeds, or dies with an error message.
+
+=cut
+
+sub run {
+    return 1;
+}
 =head1 AUTHOR
 
 Stuart R. Jefferys, C<< <srjefferys (at) gmail (dot) com> >>
