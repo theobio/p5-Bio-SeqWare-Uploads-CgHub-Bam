@@ -1,8 +1,10 @@
 package Bio::SeqWare::Uploads::CgHub::Bam;
 
-use 5.014;
-use strict;
-use warnings FATAL => 'all';
+use 5.014;         # Eval $@ safe to use.
+use strict;        # Don't allow unsafe perl constructs.
+use warnings       # Enable all optional warnings
+   FATAL => 'all';      # Make all warnings fatal.
+use autodie;       # Make core perl die on errors instead of returning undef.
 
 =head1 NAME
 
@@ -16,83 +18,112 @@ Version 0.000.001
 
 our $VERSION = '0.000001';
 
-
 =head1 SYNOPSIS
-
-Quick summary of what the module does.
-
-Perhaps a little code snippet.
 
     use Bio::SeqWare::Uploads::CgHub::Bam;
 
-    my $foo = Bio::SeqWare::Uploads::CgHub::Bam->new();
-    ...
-
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
-
-=head1 SUBROUTINES/METHODS
-
-=head2 function1
+    my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
 
 =cut
 
-sub function1 {
-}
-
-=head2 function2
+=head1 CLASS METHODS
 
 =cut
 
-sub function2 {
+=head2 new()
+
+    my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
+
+Creates and returns a Bio::SeqWare::Uploads::CgHub::Bam object. Either returns
+an object of class Bio::Seqware::Uploads::CgHub::Bam or dies with an error
+message.
+
+=cut
+
+sub new {
+    my $class = shift;
+    my $paramHR = shift;
+
+    my $self = {};
+    bless $self, $class;
 }
 
+=head1 INSTANCE METHODS
+
+=cut
+
+=head2 run()
+
+    $obj->run()
+
+Implements the actions taken when run as an application. Currently only
+returns 1 if succeds, or dies with an error message.
+
+=cut
+
+sub run {
+    return 1;
+}
 =head1 AUTHOR
 
 Stuart R. Jefferys, C<< <srjefferys (at) gmail (dot) com> >>
 
-=head1 BUGS
+Contributors:
+  Lisle Mose (get_sample.pl and generate_cghub_metadata.pl)
+  Brian O'Conner
 
-Please report any bugs or feature requests to C<bug-p5-bio-seqware-uploads-cghub-bam at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=p5-Bio-SeqWare-Uploads-CgHub-Bam>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
+=cut
 
+=head1 DEVELOPMENT
 
+This module is developed and hosted on GitHub, at
+L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam>.
+It is not currently on CPAN, and I don't have any immediate plans to post it
+there unless requested by core SeqWare developers (It is not my place to
+set out a module name hierarchy for the project as a whole :)
 
+=cut
 
-=head1 SUPPORT
+=head1 INSTALLATION
 
-You can find documentation for this module with the perldoc command.
+You can install this module directly from github using cpanm
 
-    perldoc Bio::SeqWare::Uploads::CgHub::Bam
+   # The latest bleeding edge commit on the main branch
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
+   # Any specific release:
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.031.tar.gz
 
-You can also look for information at:
+You can also download a release (zipped file) from github at
+L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases>.
 
-=over 4
+Installing is then a matter of unzipping it, changing into the unzipped
+directory, and then executing the normal (C<Module::Build>) incantation:
 
-=item * RT: CPAN's request tracker (report bugs here)
+     perl Build.PL
+     ./Build
+     ./Build test
+     ./Build install
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=p5-Bio-SeqWare-Uploads-CgHub-Bam>
+=cut
 
-=item * AnnoCPAN: Annotated CPAN documentation
+=head1 BUGS AND SUPPORT
 
-L<http://annocpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam>
+No known bugs are present in this release. Unknown bugs are a virtual
+certainty. Please report bugs (and feature requests) though the
+Github issue tracker associated with the development repository, at:
 
-=item * CPAN Ratings
+L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/issues>
 
-L<http://cpanratings.perl.org/d/p5-Bio-SeqWare-Uploads-CgHub-Bam>
+Note: you must have a GitHub account to submit issues. Basic accounts are free.
 
-=item * Search CPAN
-
-L<http://search.cpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam/>
-
-=back
-
+=cut
 
 =head1 ACKNOWLEDGEMENTS
+
+This module was developed for use with L<SegWare | http://seqware.github.io>.
+
+=cut
 
 
 =head1 LICENSE AND COPYRIGHT
@@ -112,7 +143,6 @@ GNU General Public License for more details.
 A copy of the GNU General Public License is available in the source tree;
 if not, write to the Free Software Foundation, Inc.,
 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
-
 
 =cut
 

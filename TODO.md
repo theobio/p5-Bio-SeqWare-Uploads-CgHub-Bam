@@ -10,3 +10,4 @@ These changes are planned, or will NOT be done, but have not been assigned to a 
 These are things we might do. Date and version indicate when they were added for consideration.
 
 2014-09-02 0.000.001 [MAJOR] - Need to release initial version of this distro.
+2014-09-02 0.000.001 [DOC] - Consider moving the main POD from the module to the executable file.
