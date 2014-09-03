@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 use Test::Script::Run;
-use Test::More 'tests' => 15;     # Main test module; run this many subtests
+use Test::More 'tests' => 19;     # Main test module; run this many subtests
 
 use Bio::SeqWare::Uploads::CgHub::Bam;
 my $APP = 'upload-cghub-bam';
@@ -51,6 +51,8 @@ my $APP = 'upload-cghub-bam';
         like( $appErr, qr/.*upload-cghub-bam \[options\].*/s, "Synopsis message provided on error");
         like( $appErr, qr/.*--version.*/s, "--version in synopsis");
         like( $appErr, qr/.*--help.*/s, "--help in synopsis");
+        like( $appErr, qr/.*--verbose.*/s, "--verbose in synopsis");
+        like( $appErr, qr/.*--debug.*/s, "--debug in synopsis");
         unlike( $appErr, qr/Options:|DESCRIPTION/s, "Only synopsis, not everything else");
     }
 }
@@ -67,8 +69,10 @@ my $APP = 'upload-cghub-bam';
             is( $appErr, "", "--help not output to StdErr");
         }
         like( $appOut, qr/upload-cghub-bam \[options\]/s, "Synopsis message provided for --help");
-        like( $appOut, qr/--version/s, "--version on --help");
-        like( $appOut, qr/--help/s, "--help on --help");
+        like( $appOut, qr/--version/s, "--version with --help");
+        like( $appOut, qr/--help/s, "--help with --help");
+        like( $appOut, qr/--verbose/s, "--verbose with --help");
+        like( $appOut, qr/--debug/s, "--debug with --help");
         like( $appOut, qr/Options:/s, "More details");
         unlike( $appOut, qr/DESCRIPTION/s, "Not everything.");
     }

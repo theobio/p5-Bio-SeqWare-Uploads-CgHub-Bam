@@ -51,6 +51,9 @@ sub new {
 
     my $self = {};
     bless $self, $class;
+
+    $self->loadOptions( $self->parseCli() );
+    return $self;
 }
 
 =head1 INSTANCE METHODS
@@ -68,13 +71,12 @@ returns 1 if succeds, or dies with an error message.
 
 sub run {
     my $self = shift;
-    my $opt = parseBamCli();
     return 1;
 }
 
-=head2 parseBamCli
+=head2 parseCli
 
-    my $optHR = $obj->parseBamCli()
+    my $optHR = $obj->parseCli()
 
 Parses the options and arguments from the command line into a hashref with the
 option name as the key. Parsing is done with GetOpt::Long. Some options are
@@ -85,7 +87,7 @@ upload-cghub-bam.
 
 =cut
 
-sub parseBamCli {
+sub parseCli {
     my $self = shift;
 
     # Values from config file (not implemented yet)
@@ -103,6 +105,10 @@ sub parseBamCli {
     # Override local/config options with command line options
     GetOptions(
 
+        # Output options.
+        'verbose'    => \$opt{'verbose'},
+        'debug'      => \$opt{'debug'},
+
         # Short-circuit options.
         'version'      => sub {
             print "upload-cghub-bam v$VERSION\n";
@@ -115,6 +121,26 @@ sub parseBamCli {
     ) or pod2usage( { -verbose => 0, -exitval => 2 });
 
     return \%opt;
+}
+
+=head2 loadOptions
+
+   $self->loadOptions({ key => value, ... });
+
+Loads the provided key => value settings into the object. Returns nothing on
+success. As this does validation, it can die with lots of different messages.
+It also does cross-validation and fills in implicit options, i.e. it sets
+--verbose if --debug was set.
+
+=cut
+
+sub loadOptions {
+    my $self = shift;
+    my $optHR = shift;
+
+    if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
+    if ($optHR->{'debug'}) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
+
 }
 
 =head1 AUTHOR

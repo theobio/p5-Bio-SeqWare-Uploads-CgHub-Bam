@@ -35,12 +35,17 @@ $app->run();
     --version  Print the version
     --help     Extended option descriptions
 
+    --verbose  Extra output
+    --debug    Lots of extra output
+
 For more option details, try C<upload-cghub-bam --help>. For full documentation,
 try C<perldoc upload-cghub-bam>.
 
 =head1 OPTIONS
 
 Defaults may be provided by a config file
+
+=head2 Short-Circuit Options.
 
 =over 3
 
@@ -52,6 +57,22 @@ If specified, the version will be printed and the program will exit.
 
 If specifed, a help message will be printed. Complete documentation is
 provided via perldoc upload-cghub-bam.
+
+=back
+
+=head2 Options controlling output
+
+=over 3
+
+=item --verbose
+
+If specfied, extra information is printed when running, generally state change
+information.
+
+=item --debug
+
+If specified, lots of extra information is printed when running, including the
+full list of option values. Implies --verbose.
 
 =back
 
