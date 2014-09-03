@@ -1,0 +1,61 @@
+#!usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Bio::SeqWare::Uploads::CgHub::Bam;
+
+=head1 NAME
+
+upload-cghub-bam - Upload bam files to CgHub as a stepwise workflow
+
+=cut
+
+=head1 VERSION
+
+Version 0.000.001
+
+=cut
+
+# Actual version should be the same as the base module.
+our $VERSION = $Bio::SeqWare::Uploads::CgHub::Bam::VERSION;
+
+############
+### Main ###
+############
+
+my $app = Bio::SeqWare::Uploads::CgHub::Bam->new();
+$app->run();
+
+=head1 SYNOPSIS
+
+  upload-cghub-fastq [options]
+
+  Options:
+
+     <NO OPTIONS DEFINED YET>
+
+=cut
+
+=head1 DESCRIPTION
+
+This program is used to upload bam files to CgHub, which is a relatively
+complex stepwise process involving tracking progress and errors using a
+database.
+
+=cut
+
+=head1 INTERNALS
+
+Nothing in this section is necessary for using this program, this is aimed only
+at developers (mostly me). The implementation details described here may
+change without advanced warning and possibly without updating documentation, as
+this is not part of the API. You have been warned :)
+
+This application mostly just runs code in the main application module,
+Bio::SeqWare::Uploads::CgHub::Bam.
+
+=head1 SEE ALSO
+
+This is part of the p5-Bio-SeqWare-Uploads-CgHub-Bam distribution. The main
+documentation is the Bio::SeqWare::Uploads::CgHub::Bam module POD.
