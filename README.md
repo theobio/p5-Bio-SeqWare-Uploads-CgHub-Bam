@@ -31,6 +31,19 @@ message.
 Implements the actions taken when run as an application. Currently only
 returns 1 if succeds, or dies with an error message.
 
+## parseBamCli
+
+    my $optHR = $obj->parseBamCli()
+
+Parses the options and arguments from the command line into a hashref with the
+option name as the key. Parsing is done with GetOpt::Long. Some options are
+"short-circuit" options, if given all other options are ignored (i.e. --version
+or --help).
+
+- --version
+
+    If specified, the version will be printed and the program will exit.
+
 # AUTHOR
 
 Stuart R. Jefferys, `<srjefferys (at) gmail (dot) com>`
