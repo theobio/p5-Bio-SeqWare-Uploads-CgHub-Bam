@@ -7,3 +7,4 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
  [API] - Add skeleton run method to Bam object.
  [MAJOR] - Add skeleton app upload-cghub-bam
  [API] - Add option handling, add option --version.
+ [API] - Add help output with option error, add option --help.

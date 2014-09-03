@@ -7,6 +7,8 @@ use warnings       # Enable all optional warnings
 use autodie;       # Make core perl die on errors instead of returning undef.
 
 use Getopt::Long;  # Parse command line options and arguments.
+use Pod::Usage;    # Usage messages for --help and option errors.
+
 
 
 =head1 NAME
@@ -77,15 +79,9 @@ sub run {
 Parses the options and arguments from the command line into a hashref with the
 option name as the key. Parsing is done with GetOpt::Long. Some options are
 "short-circuit" options, if given all other options are ignored (i.e. --version
-or --help).
-
-=over 3
-
-=item --version
-
-If specified, the version will be printed and the program will exit.
-
-=back
+or --help). If an unknown option is provided on the command line, this will
+exit with a usage message. For options see the OPTIONS section in
+upload-cghub-bam.
 
 =cut
 
@@ -112,8 +108,11 @@ sub parseBamCli {
             print "upload-cghub-bam v$VERSION\n";
             exit 1;
         },
+        'help'         => sub {
+            pod2usage( { -verbose => 1, -exitval => 1 });
+        },
 
-    );
+    ) or pod2usage( { -verbose => 0, -exitval => 2 });
 
     return \%opt;
 }
