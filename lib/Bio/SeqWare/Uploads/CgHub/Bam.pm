@@ -6,6 +6,9 @@ use warnings       # Enable all optional warnings
    FATAL => 'all';      # Make all warnings fatal.
 use autodie;       # Make core perl die on errors instead of returning undef.
 
+use Getopt::Long;  # Parse command line options and arguments.
+
+
 =head1 NAME
 
 Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
@@ -62,8 +65,59 @@ returns 1 if succeds, or dies with an error message.
 =cut
 
 sub run {
+    my $self = shift;
+    my $opt = parseBamCli();
     return 1;
 }
+
+=head2 parseBamCli
+
+    my $optHR = $obj->parseBamCli()
+
+Parses the options and arguments from the command line into a hashref with the
+option name as the key. Parsing is done with GetOpt::Long. Some options are
+"short-circuit" options, if given all other options are ignored (i.e. --version
+or --help).
+
+=over 3
+
+=item --version
+
+If specified, the version will be printed and the program will exit.
+
+=back
+
+=cut
+
+sub parseBamCli {
+    my $self = shift;
+
+    # Values from config file (not implemented yet)
+    my $configOptionsHR = {};
+
+    # Default values (not implemented yet)
+    my $optionsHR = {};
+
+    # Combine local defaults with (over-ride by) config file options
+    my %opt = ( %$optionsHR, %$configOptionsHR );
+
+    # Record command line arguments
+    $opt{'argv'} = [ @ARGV ];
+
+    # Override local/config options with command line options
+    GetOptions(
+
+        # Short-circuit options.
+        'version'      => sub {
+            print "upload-cghub-bam v$VERSION\n";
+            exit 1;
+        },
+
+    );
+
+    return \%opt;
+}
+
 =head1 AUTHOR
 
 Stuart R. Jefferys, C<< <srjefferys (at) gmail (dot) com> >>
