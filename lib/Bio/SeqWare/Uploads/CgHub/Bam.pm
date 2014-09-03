@@ -7,6 +7,8 @@ use warnings       # Enable all optional warnings
 use autodie;       # Make core perl die on errors instead of returning undef.
 
 use Getopt::Long;  # Parse command line options and arguments.
+use Pod::Usage;    # Usage messages for --help and option errors.
+
 
 
 =head1 NAME
@@ -49,6 +51,9 @@ sub new {
 
     my $self = {};
     bless $self, $class;
+
+    $self->loadOptions( $self->parseCli() );
+    return $self;
 }
 
 =head1 INSTANCE METHODS
@@ -66,30 +71,25 @@ returns 1 if succeds, or dies with an error message.
 
 sub run {
     my $self = shift;
-    my $opt = parseBamCli();
     return 1;
 }
 
-=head2 parseBamCli
+=head1 INTERNAL METHODS
 
-    my $optHR = $obj->parseBamCli()
+=head2 parseCli
+
+    my $optHR = $obj->parseCli()
 
 Parses the options and arguments from the command line into a hashref with the
 option name as the key. Parsing is done with GetOpt::Long. Some options are
 "short-circuit" options, if given all other options are ignored (i.e. --version
-or --help).
-
-=over 3
-
-=item --version
-
-If specified, the version will be printed and the program will exit.
-
-=back
+or --help). If an unknown option is provided on the command line, this will
+exit with a usage message. For options see the OPTIONS section in
+upload-cghub-bam.
 
 =cut
 
-sub parseBamCli {
+sub parseCli {
     my $self = shift;
 
     # Values from config file (not implemented yet)
@@ -107,15 +107,101 @@ sub parseBamCli {
     # Override local/config options with command line options
     GetOptions(
 
+        # Output options.
+        'verbose'    => \$opt{'verbose'},
+        'debug'      => \$opt{'debug'},
+
         # Short-circuit options.
         'version'      => sub {
             print "upload-cghub-bam v$VERSION\n";
             exit 1;
         },
+        'help'         => sub {
+            pod2usage( { -verbose => 1, -exitval => 1 });
+        },
 
-    );
+    ) or pod2usage( { -verbose => 0, -exitval => 2 });
 
     return \%opt;
+}
+
+=head2 loadOptions
+
+   $self->loadOptions({ key => value, ... });
+
+Loads the provided key => value settings into the object. Returns nothing on
+success. As this does validation, it can die with lots of different messages.
+It also does cross-validation and fills in implicit options, i.e. it sets
+--verbose if --debug was set.
+
+=cut
+
+sub loadOptions {
+    my $self = shift;
+    my $optHR = shift;
+
+    if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
+    if ($optHR->{'debug'}) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
+
+}
+
+=head2 sayDebug
+
+   $self->sayDebug("Something printed only if --debug was set.");
+
+Used to output text conditional on the --debug flag. Nothing is output if
+--debug is not set.
+
+See also say, sayVerbose.
+
+=cut
+
+sub sayDebug {
+    my $self = shift;
+    my $message = shift;
+    unless ( $self->{'debug'} ) {
+        return;
+    }
+    print( $message );
+}
+
+=head2 sayVerbose
+
+   $self->sayVerbose("Something printed only if --verbose was set.");
+
+Used to output text conditional on the --verbose flag. Nothing iw output if
+--verbose was not set. Note setting --debug automatically implies --verbose,
+so sayVerbose will output text when --debug was set even if --verbose never
+was expcicitly passed 
+
+See also say, sayDebug.
+
+=cut
+
+sub sayVerbose {
+    my $self = shift;
+    my $message = shift;
+    unless ( $self->{'verbose'} ) {
+        return;
+    }
+    print( $message );
+}
+
+=head2 say
+
+   $self->say("Something to print regardless of --verbose and --debug");
+
+Output text just like print, but wrapped so it is cognitively linked with
+sayVerbose and sayDebug.
+
+See also sayVerbose, sayDebug.
+
+=cut
+
+sub say {
+    my $self = shift;
+    my $message = shift;
+    print( $message );
 }
 
 =head1 AUTHOR
