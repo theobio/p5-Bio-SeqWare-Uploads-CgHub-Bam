@@ -9,3 +9,4 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
  [API] - Add option handling, add option --version.
  [API] - Add help output with option error, add option --help.
  [API] - Add --verbose and --debug options
+ [FEATURE] - Amount of output varies based on --verbose and --debug

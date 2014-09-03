@@ -74,6 +74,8 @@ sub run {
     return 1;
 }
 
+=head1 INTERNAL METHODS
+
 =head2 parseCli
 
     my $optHR = $obj->parseCli()
@@ -141,6 +143,65 @@ sub loadOptions {
     if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
     if ($optHR->{'debug'}) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
 
+}
+
+=head2 sayDebug
+
+   $self->sayDebug("Something printed only if --debug was set.");
+
+Used to output text conditional on the --debug flag. Nothing is output if
+--debug is not set.
+
+See also say, sayVerbose.
+
+=cut
+
+sub sayDebug {
+    my $self = shift;
+    my $message = shift;
+    unless ( $self->{'debug'} ) {
+        return;
+    }
+    print( $message );
+}
+
+=head2 sayVerbose
+
+   $self->sayVerbose("Something printed only if --verbose was set.");
+
+Used to output text conditional on the --verbose flag. Nothing iw output if
+--verbose was not set. Note setting --debug automatically implies --verbose,
+so sayVerbose will output text when --debug was set even if --verbose never
+was expcicitly passed 
+
+See also say, sayDebug.
+
+=cut
+
+sub sayVerbose {
+    my $self = shift;
+    my $message = shift;
+    unless ( $self->{'verbose'} ) {
+        return;
+    }
+    print( $message );
+}
+
+=head2 say
+
+   $self->say("Something to print regardless of --verbose and --debug");
+
+Output text just like print, but wrapped so it is cognitively linked with
+sayVerbose and sayDebug.
+
+See also sayVerbose, sayDebug.
+
+=cut
+
+sub say {
+    my $self = shift;
+    my $message = shift;
+    print( $message );
 }
 
 =head1 AUTHOR
