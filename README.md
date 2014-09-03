@@ -8,61 +8,79 @@ Version 0.000.001
 
 # SYNOPSIS
 
-Quick summary of what the module does.
-
-Perhaps a little code snippet.
-
     use Bio::SeqWare::Uploads::CgHub::Bam;
 
-    my $foo = Bio::SeqWare::Uploads::CgHub::Bam->new();
-    ...
+    my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
 
-# EXPORT
+# CLASS METHODS
 
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+## new()
 
-# SUBROUTINES/METHODS
+    my $obj = Bio::SeqWare::Uploads::CgHub::Bam->new();
 
-## function1
+Creates and returns a Bio::SeqWare::Uploads::CgHub::Bam object. Either returns
+an object of class Bio::Seqware::Uploads::CgHub::Bam or dies with an error
+message.
 
-## function2
+# INSTANCE METHODS
+
+## run()
+
+    $obj->run()
+
+Implements the actions taken when run as an application. Currently only
+returns 1 if succeds, or dies with an error message.
 
 # AUTHOR
 
 Stuart R. Jefferys, `<srjefferys (at) gmail (dot) com>`
 
-# BUGS
+Contributors:
+  Lisle Mose (get\_sample.pl and generate\_cghub\_metadata.pl)
+  Brian O'Conner
 
-Please report any bugs or feature requests to `bug-p5-bio-seqware-uploads-cghub-bam at rt.cpan.org`, or through
-the web interface at [http://rt.cpan.org/NoAuth/ReportBug.html?Queue=p5-Bio-SeqWare-Uploads-CgHub-Bam](http://rt.cpan.org/NoAuth/ReportBug.html?Queue=p5-Bio-SeqWare-Uploads-CgHub-Bam).  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
+# DEVELOPMENT
 
-# SUPPORT
+This module is developed and hosted on GitHub, at
+[https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam](https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam).
+It is not currently on CPAN, and I don't have any immediate plans to post it
+there unless requested by core SeqWare developers (It is not my place to
+set out a module name hierarchy for the project as a whole :)
 
-You can find documentation for this module with the perldoc command.
+# INSTALLATION
 
-    perldoc Bio::SeqWare::Uploads::CgHub::Bam
+You can install this module directly from github using cpanm
 
-You can also look for information at:
+    # The latest bleeding edge commit on the main branch
+    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
-- RT: CPAN's request tracker (report bugs here)
+    # Any specific release:
+    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.031.tar.gz
 
-    [http://rt.cpan.org/NoAuth/Bugs.html?Dist=p5-Bio-SeqWare-Uploads-CgHub-Bam](http://rt.cpan.org/NoAuth/Bugs.html?Dist=p5-Bio-SeqWare-Uploads-CgHub-Bam)
+You can also download a release (zipped file) from github at
+[https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases](https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases).
 
-- AnnoCPAN: Annotated CPAN documentation
+Installing is then a matter of unzipping it, changing into the unzipped
+directory, and then executing the normal (`Module::Build`) incantation:
 
-    [http://annocpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam](http://annocpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam)
+     perl Build.PL
+     ./Build
+     ./Build test
+     ./Build install
 
-- CPAN Ratings
+# BUGS AND SUPPORT
 
-    [http://cpanratings.perl.org/d/p5-Bio-SeqWare-Uploads-CgHub-Bam](http://cpanratings.perl.org/d/p5-Bio-SeqWare-Uploads-CgHub-Bam)
+No known bugs are present in this release. Unknown bugs are a virtual
+certainty. Please report bugs (and feature requests) though the
+Github issue tracker associated with the development repository, at:
 
-- Search CPAN
+[https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/issues](https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/issues)
 
-    [http://search.cpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam/](http://search.cpan.org/dist/p5-Bio-SeqWare-Uploads-CgHub-Bam/)
+Note: you must have a GitHub account to submit issues. Basic accounts are free.
 
 # ACKNOWLEDGEMENTS
+
+This module was developed for use with [SegWare ](https://metacpan.org/pod/&#x20;http:#seqware.github.io).
 
 # LICENSE AND COPYRIGHT
 
