@@ -5,11 +5,17 @@ use strict;        # Don't allow unsafe perl constructs.
 use warnings       # Enable all optional warnings
    FATAL => 'all';      # Make all warnings fatal.
 use autodie;       # Make core perl die on errors instead of returning undef.
+use Carp;          # User-space excpetions
 
 use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
 
+use File::HomeDir qw(home);             # Finding the home directory is hard.
+use File::Spec::Functions qw(catfile);  # Generic file handling.
+use Data::GUID;                         # Unique uuids.
 
+# GitHub only modules
+use Bio::SeqWare::Config;   # Config file parsing.
 
 =head1 NAME
 
@@ -95,11 +101,13 @@ sub parseCli {
     # Values from config file (not implemented yet)
     my $configOptionsHR = {};
 
-    # Default values (not implemented yet)
-    my $optionsHR = {};
+    # Default values
+    my $optionDefaultsHR = {
+        'config' => Bio::SeqWare::Config->getDefaultFile(),
+    };
 
     # Combine local defaults with (over-ride by) config file options
-    my %opt = ( %$optionsHR, %$configOptionsHR );
+    my %opt = ( %$optionDefaultsHR, %$configOptionsHR );
 
     # Record command line arguments
     $opt{'argv'} = [ @ARGV ];
@@ -107,6 +115,8 @@ sub parseCli {
     # Override local/config options with command line options
     GetOptions(
 
+        # Input options.
+        'config=s'   => \$opt{'config'},
         # Output options.
         'verbose'    => \$opt{'verbose'},
         'debug'      => \$opt{'debug'},
@@ -123,6 +133,61 @@ sub parseCli {
     ) or pod2usage( { -verbose => 0, -exitval => 2 });
 
     return \%opt;
+}
+
+=head2 getConfigOptions
+
+    my %configOptHR = $self->loadConfig( $fileName );
+
+Validates the filename as this is called early and the $fileName may be
+an unvalidated options.
+
+Returns a hash-ref of optionName => value entries.
+
+Will die if can't find the config file specified, or if something happens
+while parsing the config file (i.e. with Bio::Seqware::Config)
+
+=cut
+
+sub getConfigOptions {
+    my $self = shift;
+    my $fileName = shift;
+
+    $fileName = $self->fixupTildePath( $fileName );
+    unless (defined $fileName) {
+        croak( "Can't find config file: <undef>." );
+    }
+    unless (-f $fileName) {
+        croak( "Can't find config file: \"$fileName\"." );
+    }
+
+    my $configParser = Bio::SeqWare::Config->new( $fileName );
+    return $configParser->getAll();
+}
+
+=head2 fixupTildePath
+
+    my $path = $self->fixupTildePath( $filePath );
+
+Perl does not recognize the unix convention that file paths begining with
+a tilde (~) are relative to the users home directory. This is function makes
+that happen *lexically*. There is no validation that the output file or path
+actually makes sense. If the the input path does not begin with a ~, it is
+returned without change. Uses File::HomeDir to handle finding a home dir.
+
+=cut
+
+sub fixupTildePath {
+    my $self = shift;
+    my $path = shift;
+
+    unless ($path && $path =~ /^~/) {
+        return $path;
+    }
+
+    my $home = home();
+    $path =~ s/^~/$home/;
+    return $path;
 }
 
 =head2 loadOptions
@@ -142,6 +207,8 @@ sub loadOptions {
 
     if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
     if ($optHR->{'debug'}) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
+
+    $self->{'_optHR'} = $optHR;
 
 }
 
@@ -202,6 +269,20 @@ sub say {
     my $self = shift;
     my $message = shift;
     print( $message );
+}
+
+=head2 makeUuid
+
+    my $uuid = $self->makeUuid();
+
+Creates and returns a new unique string form uuid like
+"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
+
+=cut
+
+sub makeUuid {
+    my $self = shift;
+    return Data::GUID->new()->as_string();
 }
 
 =head1 AUTHOR
