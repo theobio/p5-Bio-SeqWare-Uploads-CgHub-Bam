@@ -5,9 +5,13 @@ use strict;        # Don't allow unsafe perl constructs.
 use warnings       # Enable all optional warnings
    FATAL => 'all';      # Make all warnings fatal.
 use autodie;       # Make core perl die on errors instead of returning undef.
+
+# Core modules
 use Carp;          # User-space excpetions
 use Data::Dumper;  # Simple data structure to string converter.
+use Sys::Hostname; # Get the hostname for logging
 
+# Cpan modules
 use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
 
@@ -17,6 +21,9 @@ use Data::GUID;                         # Unique uuids.
 
 # GitHub only modules
 use Bio::SeqWare::Config;   # Config file parsing.
+
+my
+ $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 
 =head1 NAME
 
@@ -48,7 +55,7 @@ our $VERSION = '0.000001';
 
 Creates and returns a Bio::SeqWare::Uploads::CgHub::Bam object. Either returns
 an object of class Bio::Seqware::Uploads::CgHub::Bam or dies with an error
-message.
+message. Will initialize and validate options.
 
 =cut
 
@@ -62,6 +69,28 @@ sub new {
     return $self->init();
 }
 
+=head2 getTimestamp()
+
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp().
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp( $unixTime ).
+
+Returns a timestamp formated like YYYY-MM-DD_HH:MM:SS, zero padded, 24 hour
+time. If a parameter is passed, it is assumed to be a unix epoch time (integer
+or float seconds since Unix 0). If no parameter is passed, the current time will
+be queried. Time is parsed through perl's localtime().
+
+=cut
+
+sub getTimestamp {
+    my $class = shift;
+    my $time = shift;
+    if (! defined $time) {
+       $time = time();
+    }
+    my ($sec, $min, $hr, $day, $mon, $yr) = localtime($time);
+    return sprintf ( "%04d-%02d-%02d_%02d:%02d:%02d",
+                     $yr+1900, $mon+1, $day, $hr, $min, $sec);
+}
 
 =head1 INSTANCE METHODS
 
@@ -99,12 +128,14 @@ Returns the fully initialized application object ready for running.
 sub init {
     my $self = shift;
 
+    $self->{'id'} = $self->makeUuid();
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
     my %opt = ( %$configOptionsHR, %$cliOptionsHR );
     $self->loadOptions( \%opt );
 
+    # Retrspectve logging (as logging being configured above.)
     $self->sayDebug("Loading config file:", $configFile);
     $self->sayDebug("Config options:", $configOptionsHR);
     $self->sayDebug("CLI options:", $cliOptionsHR);
@@ -142,9 +173,11 @@ sub parseCli {
 
         # Input options.
         'config=s'   => \$opt{'config'},
+
         # Output options.
         'verbose'    => \$opt{'verbose'},
         'debug'      => \$opt{'debug'},
+        'log'        => \$opt{'log'},
 
         # Short-circuit options.
         'version'      => sub {
@@ -231,11 +264,65 @@ sub loadOptions {
     my $optHR = shift;
 
     if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
-    if ($optHR->{'debug'}) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
+    if ($optHR->{'debug'}  ) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
+    if ($optHR->{'log'}    ) { $self->{'log'}     = 1; }
 
     $self->{'_optHR'} = $optHR;
     $self->{'_argvAR'} = $optHR->{'argvAR'}
 
+}
+
+=head2 getLogPrefix
+
+    my $prefix = $self->getLogPrefix()
+
+Create a prefix for logging messages, formatted as
+
+     HOST TIMESTAMP RUN-UUID [LEVEL]
+
+where timestamp formatted like getTimestamp, described herein and level is the
+reporting level (INFO by default, or VERBOSE or DEBUG, if --verbose or --debug
+reporting is specified by option.)
+
+=cut
+
+sub getLogPrefix {
+    my $self = shift;
+
+    my $host = hostname();
+    my $timestamp = $CLASS->getTimestamp();
+    my $id = $self->{'id'};
+    my $level = 'INFO';
+    if ($self->{'verbose'}) {
+        $level = 'VERBOSE';
+    }
+    if ($self->{'debug'}) {
+        $level = 'DEBUG';
+    }
+    return "$host $timestamp $id [$level]";
+}
+
+=head2 logifyMessage
+
+    my $logMessage = logifyMessage( $message );
+
+Makes a message suitable for logging. It adds a prefix at the start of
+every line and ensures the message ends with a newline. The prefix is by
+provided by getLogPrefix. The prefix is separated from the message by a single
+space, although any formating at the begining of a line is preserved, just
+moved over by the length of the prefix (+ a space.)
+
+=cut
+
+sub logifyMessage {
+    my $self = shift;
+    my $message = shift;
+
+    chomp $message;
+    my @lines = split( "\n", $message, 0);
+    my $prefix = $self->getLogPrefix() . " ";
+    $message = $prefix . join( "\n$prefix", @lines);
+    return $message . "\n";
 }
 
 =head2 sayDebug
@@ -245,6 +332,9 @@ sub loadOptions {
 
 Used to output text conditional on the --debug flag. Nothing is output if
 --debug is not set.
+
+If the --log option is set, adds a prefix to each line of a message
+using logifyMessage.
 
 If an object parameter is passed, it will be printed on the following line.
 Normal stringification is performed, so $object can be anything, including
@@ -263,14 +353,16 @@ sub sayDebug {
         return;
     }
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
-        print( $message . "\n" . Dumper($object) );
+        $message = $message . "\n" . Dumper($object);
     }
     elsif (defined $object) {
-        print( $message . "\n" . $object );
+        $message = $message . "\n" . $object;
     }
-    else {
-        print( $message );
+
+    if ( $self->{'log'} ) {
+        $message = $self->logifyMessage($message);
     }
+    print $message;
 }
 
 =head2 sayVerbose
@@ -282,6 +374,9 @@ Used to output text conditional on the --verbose flag. Nothing iw output if
 --verbose was not set. Note setting --debug automatically implies --verbose,
 so sayVerbose will output text when --debug was set even if --verbose never
 was expcicitly passed 
+
+If the --log option is set, adds a prefix to each line of a message
+using logifyMessage.
 
 If an object parameter is passed, it will be printed on the following line.
 Normal stringification is performed, so $object can be anything, including
@@ -300,14 +395,16 @@ sub sayVerbose {
         return;
     }
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
-        print( $message . "\n" . Dumper($object) );
+        $message = $message . "\n" . Dumper($object);
     }
     elsif (defined $object) {
-        print( $message . "\n"  . $object );
+        $message = $message . "\n"  . $object;
     }
-    else {
-        print( $message );
+
+    if ( $self->{'log'} ) {
+        $message = $self->logifyMessage($message);
     }
+    print $message;
 }
 
 =head2 say
@@ -315,9 +412,17 @@ sub sayVerbose {
    $self->say("Something to print regardless of --verbose and --debug");
    $self->say("Something", $object);
 
-Output text just like print, but takes object option like sayVerbose and
+Output text like print, but takes object option like sayVerbose and
 sayDebug.
 
+
+If the --log option is set, adds a prefix to each line of a message
+using logifyMessage.
+
+If an object parameter is passed, it will be printed on the following line.
+Normal stringification is performed, so $object can be anything, including
+another string, but if it is a hash-ref or an array ref, it will be formated
+with Data::Dumper before printing.
 See also sayVerbose, sayDebug.
 
 =cut
@@ -327,14 +432,16 @@ sub say {
     my $message = shift;
     my $object = shift;
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
-        print( $message . "\n" . Dumper($object) );
+        $message = $message . "\n" . Dumper($object);
     }
     elsif (defined $object) {
-        print( $message . "\n"  . $object );
+        $message = $message . "\n"  . $object;
     }
-    else {
-        print( $message );
+
+    if ( $self->{'log'} ) {
+        $message = $self->logifyMessage($message);
     }
+    print $message;
 }
 
 =head2 makeUuid
@@ -350,6 +457,7 @@ sub makeUuid {
     my $self = shift;
     return Data::GUID->new()->as_string();
 }
+
 
 =head1 AUTHOR
 
@@ -408,7 +516,7 @@ Note: you must have a GitHub account to submit issues. Basic accounts are free.
 
 =head1 ACKNOWLEDGEMENTS
 
-This module was developed for use with L<SegWare | http://seqware.github.io>.
+This module was developed for use with L<SeqWare | http://seqware.github.io>.
 
 =cut
 

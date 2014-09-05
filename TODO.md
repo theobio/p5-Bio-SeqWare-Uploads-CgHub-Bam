@@ -11,3 +11,4 @@ These are things we might do. Date and version indicate when they were added for
 
 2014-09-02 0.000.001 [MAJOR] - Need to release initial version of this distro.
 2014-09-02 0.000.001 [DOC] - Consider moving the main POD from the module to the executable file.
+2014-09-05 0.000.001 [DOC] - Refactor test for options.

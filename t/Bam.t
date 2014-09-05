@@ -4,7 +4,8 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 8;     # Main test module; run this many subtests
+use Test::More 'tests' => 11
+;     # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
@@ -25,10 +26,14 @@ subtest( 'loadOptions()' => \&testLoadOptions );
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
 subtest( 'say(),sayDebug(),SayVerbose()' => \&testSayAndSayDebugAndSayVerbose );
-subtest( 'makeUuid()' => \&testMakeUuid );
+subtest( 'makeUuid()'     => \&testMakeUuid    );
+subtest( 'getTimestamp()' => \&testGetTimestamp);
+subtest( 'getLogPrefix()' => \&testGetLogPrefix);
+subtest( 'logifyMessage()' => \&testLogifyMessage);
+
 
 sub testNew {
-    plan( tests => 1 );
+    plan( tests => 2 );
 
     my $obj = $CLASS->new();
     {
@@ -36,6 +41,12 @@ sub testNew {
         my $want = $CLASS;
         my $got = blessed( $obj );
         is( $got, $want, $message );
+    }
+    {
+        my $message = "Has UUID";
+        my $got = $obj->{'id'};
+        my $expectRE =  qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/;
+        like( $got, $expectRE, $message );
     }
 }
 
@@ -52,7 +63,7 @@ sub testRun {
 }
 
 sub testLoadOptions {
-    plan( tests => 8 );
+    plan( tests => 10 );
 
     # --verbose only
     {
@@ -60,8 +71,8 @@ sub testLoadOptions {
         my $optHR = {'verbose' => 1};
         $obj->loadOptions($optHR);
         {
-            ok( $obj->{'verbose'}, "verbose only sets verbose");
-            ok( ! $obj->{'debug'}, "verbose only does not set debug");
+            ok( $obj->{'verbose'}, "verbose sets verbose");
+            ok( ! $obj->{'debug'}, "verbose does not set debug");
         }
     }
     # --debug only
@@ -70,8 +81,8 @@ sub testLoadOptions {
         my $optHR = {'debug' => 1};
         $obj->loadOptions($optHR);
         {
-            ok( $obj->{'debug'}, "debug only sets debug");
-            ok( $obj->{'verbose'}, "debug only sets verbose");
+            ok( $obj->{'debug'}, "debug sets debug");
+            ok( $obj->{'verbose'}, "debug sets verbose");
         }
     }
     # --verbose && --debug
@@ -83,6 +94,19 @@ sub testLoadOptions {
             ok( $obj->{'verbose'}, "verbose and debug sets verbose");
             ok( $obj->{'debug'}, "verbose and debug sets debug");
         }
+    }
+
+    # --log
+    {
+        my $obj = $CLASS->new();
+        my $optHR = { 'log' => 1 };
+        $obj->loadOptions($optHR);
+        ok($obj->{'_optHR'}->{'log'}, "log set if needed.");
+    }
+    {
+        my $obj = $CLASS->new();
+        $obj->loadOptions({});
+        ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
     }
 
     # _argvAR
@@ -103,7 +127,7 @@ sub testLoadOptions {
 }
 
 sub testParseCli {
-    plan( tests => 6 );
+    plan( tests => 8 );
     my $obj = $CLASS->new();
 
     # --verbose
@@ -134,6 +158,20 @@ sub testParseCli {
          ok( $opt->{'debug'}, $message );
     }
 
+    # --log
+    {
+         my $message = "--log flag default is unset";
+         @ARGV = qw();
+         my $opt = $obj->parseCli();
+         ok( ! $opt->{'log'}, $message );
+    }
+    {
+         my $message = "--log flag can be set";
+         @ARGV = qw(--log);
+         my $opt = $obj->parseCli();
+         ok( $opt->{'log'}, $message );
+    }
+
     # --config
     {
          my $message = "--config default is set";
@@ -151,7 +189,7 @@ sub testParseCli {
 }
 
 sub testSayAndSayDebugAndSayVerbose {
-    plan( tests => 18 );
+    plan( tests => 21 );
 
     # --debug set
     {
@@ -237,6 +275,24 @@ sub testSayAndSayDebugAndSayVerbose {
         }
     }
 
+    # --debug and --log set
+    {
+        @ARGV = qw(--debug --log);
+        my $obj = $CLASS->new();
+        my $text = 'Say with debug on';
+        my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
+        my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
+        my $hostRES = '[^\s]+';
+        my $levelRES = '(INFO|VERBOSE|DEBUG)';
+        my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES . ' \[' . $levelRES . '\]';
+        my $expectRE = qr/^$prefxRES $text\n$/m;
+        {
+            stdout_like { $obj->sayDebug(   $text ); } $expectRE, "--debug and sayDebug";
+            stdout_like { $obj->sayVerbose( $text ); } $expectRE, "--debug and sayVerbose";
+            stdout_like { $obj->say(        $text ); } $expectRE, "--debug and say";
+        }
+    }
+
 }
 
 sub testFixupTildePath {
@@ -309,4 +365,84 @@ sub testMakeUuid {
     like( $uuid, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "uuid generated as string");
     like( $uuid2, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "another uuid generated as string");
     isnt( $uuid, $uuid2, "two successive uuids are not the same");
+}
+
+sub testGetTimestamp {
+    plan( tests => 2);
+
+    {
+        my $message = "New timestamp is generated correctly";
+        my $got = $CLASS->getTimestamp();
+        my $matchRE = qr/^\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}$/;
+        like( $got, $matchRE, $message);
+    }
+    {
+        my $message = "Provided timestamp is formatted correctly";
+        my $got = $CLASS->getTimestamp( 0 );
+        my $matchRE = qr/^\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}$/;
+        # Can't test absolute due to time-zone local shifting.
+        like( $got, $matchRE, $message);
+    }
+}
+
+sub testGetLogPrefix {
+    plan( tests => 1);
+
+     @ARGV = qw();
+    my $obj = $CLASS->new();
+
+    my $message = "Log prefix is formatted correctly";
+    my $got = $obj->getLogPrefix();
+    my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
+    my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
+    my $hostRES = '[^\s]+';
+    my $levelRES = '(INFO|VERBOSE|DEBUG)';
+    my $exectRE = qr(^$hostRES $timestampRES $uuidRES \[$levelRES\]$);
+    like( $got, $exectRE, $message);
+}
+
+sub testLogifyMessage {
+    plan( tests => 4 );
+
+    @ARGV = qw();
+    my $obj = $CLASS->new();
+    my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
+    my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
+    my $hostRES = '[^\s]+';
+    my $levelRES = '(INFO|VERBOSE|DEBUG)';
+    my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES . ' \[' . $levelRES . '\]';
+
+    {
+        my $message = 'Logify a single line message ending in \n';
+        my $text = "Simple message line";
+        my $got = $obj->logifyMessage("$text\n");
+        my $expectRE = qr/^$prefxRES $text\n$/m;
+        like($got, $expectRE, $message);
+    }
+    {
+        my $message = 'Logify a multi-line message ending in \n';
+        my $text1 = "Complex message";
+        my $text2 = "\twith";
+        my $text3 = "\tsome formating";
+        my $expectRE = qr/^$prefxRES $text1\n$prefxRES $text2\n$prefxRES $text3\n$/m;
+        my $got = $obj->logifyMessage("$text1\n$text2\n$text3\n");
+        like($got, $expectRE, $message);
+    }
+    {
+        my $message = 'Logify a single line message not ending in \n';
+        my $text = "Simple message line";
+        my $got = $obj->logifyMessage("$text");
+        my $expectRE = qr/^$prefxRES $text\n$/m;
+        like($got, $expectRE, $message);
+    }
+    {
+        my $message = 'Logify a multi-line message not ending in \n';
+        my $text1 = "Complex message";
+        my $text2 = "\twith";
+        my $text3 = "\tsome formating";
+        my $expectRE = qr/^$prefxRES $text1\n$prefxRES $text2\n$prefxRES $text3\n$/m;
+        my $got = $obj->logifyMessage("$text1\n$text2\n$text3");
+        like($got, $expectRE, $message);
+    }
+
 }

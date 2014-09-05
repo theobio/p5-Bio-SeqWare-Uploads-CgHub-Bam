@@ -37,6 +37,7 @@ $app->run();
 
     --verbose  Extra output
     --debug    Lots of extra output
+    --log      Ouput prefixed with host, time, id, and level.
 
     --config   The config file, default = ~/.seqware/settings
 
@@ -92,6 +93,46 @@ If specified, lots of extra information is printed when running, including the
 full list of option values. Implies --verbose. Note: this may cause passwords
 to be dumped in plain text if provided on the command line or in the config
 file.
+
+=item --log
+
+If specified, output will be formatted for a log file with a prefix. A message
+like
+
+ The message. If on several lines
+ The prefix is added to each.
+    Extra indenting is preserved.
+
+Will be displayed like
+
+ HOST TIMESTAMP RUN-UUID [LEVEL] The message. If on several lines
+ HOST TIMESTAMP RUN-UUID [LEVEL] The prefix is added to each. Note:
+ HOST TIMESTAMP RUN-UUID [LEVEL]    Extra indenting is preserved.
+
+=over 3
+
+=item HOST
+
+The machine running the code that generated the message
+
+=item TIMESTAMP
+
+The date and time of the message
+
+=item RUN-UUID
+
+A unique id that can be used to match all messages from the same run.
+
+=item [LEVEL]
+
+The level generating the message, "INFO", "VERBOSE", "DEBUG", or "FATAL".
+
+=item The message.
+
+The text of the message. If the message wraps to the next line, the prefix
+will be repeated.
+
+=back
 
 =back
 
