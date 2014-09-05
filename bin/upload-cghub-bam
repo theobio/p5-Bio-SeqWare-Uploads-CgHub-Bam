@@ -38,6 +38,8 @@ $app->run();
     --verbose  Extra output
     --debug    Lots of extra output
 
+    --config   The config file, default = ~/.seqware/settings
+
 For more option details, try C<upload-cghub-bam --help>. For full documentation,
 try C<perldoc upload-cghub-bam>.
 
@@ -51,12 +53,27 @@ Defaults may be provided by a config file
 
 =item --version
 
-If specified, the version will be printed and the program will exit.
+If specified, the version will be printed and the program will exit. Ignored
+if specified in a config file
 
 =item --help
 
 If specifed, a help message will be printed. Complete documentation is
-provided via perldoc upload-cghub-bam.
+provided via perldoc upload-cghub-bam. Ignored if specified in a config file
+
+=back
+
+=head2 Options controlling input
+
+=over 3
+
+=item --config [FILE]
+
+The config file, provides defaults for options. See the CONFIG FILE section
+for more details. This can be an absolute or relative path. If no config file
+is specified, the default config file looked for will be "~/.seqware/settings".
+Note: If specified in a config file, this is currently ignored, by may be
+implemented eventually to allow multiple cascading config files.
 
 =back
 
@@ -72,7 +89,9 @@ information.
 =item --debug
 
 If specified, lots of extra information is printed when running, including the
-full list of option values. Implies --verbose.
+full list of option values. Implies --verbose. Note: this may cause passwords
+to be dumped in plain text if provided on the command line or in the config
+file.
 
 =back
 
@@ -83,6 +102,65 @@ full list of option values. Implies --verbose.
 This program is used to upload bam files to CgHub, which is a relatively
 complex stepwise process involving tracking progress and errors using a
 database.
+
+=cut
+
+=head1 CONFIG FILE
+
+=head2 Example
+
+   # An example config file (no leading space should be used on left)
+   # This is a comment, which will be ignored, as will the next two lines
+   #
+   
+   dbUser = seqware
+   dbPassword = "seqware"
+   dbHost = dbtest.bioinf.unc.edu
+   db = seqware_meta_db
+   
+   debug = 1
+   
+=head2 Description
+
+A config file is used as the defaults for options. Any options, except
+the --help, --version, and (for now) --config parameters can be read from the
+conifig file. Options specified
+on the command line will over-ride anything from the config file. If no
+config file is specified, a default config file "~/.seqware/settings will be
+looked for. This file should be readable only by the user; chmod 600 this
+file if not.
+
+Note, unlike the command line, options specified in the config
+file need not be used, allowing one config file to contain parameters for
+multiple programs. The drawback is if an option is misspelled in the
+config file, it will fail silently. Only the main option name may be used (the
+first given above). Aliases and short-option equivalents can only be used on
+the command line.
+
+The contents of the file are interpreted as follows:
+
+=over 3
+
+=item Blank lines
+
+Lines consisting of only all white space are ignored
+
+=item Comment lines
+
+Lines where the first character in the line is a "#" symbol are comment lines
+and are ignored.
+
+=item option = value lines
+
+The main content of the config file will be lines with an option name (without
+the leading "--" ). If the option can take a value, it is separated from the
+option by an "=" sign. If the option or value have leading or trailing spaces,
+these are removed. If the first and last character of the value are quotes or
+appostrophies, they will be removed and the value will be converted to a string.
+This allows for strings with leading or trailing whitespace, escaped characters,
+etc.
+
+=back
 
 =cut
 
