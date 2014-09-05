@@ -1,5 +1,6 @@
 #! /usr/bin/env perl
 
+use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
@@ -51,7 +52,7 @@ sub testRun {
 }
 
 sub testLoadOptions {
-    plan( tests => 6 );
+    plan( tests => 8 );
 
     # --verbose only
     {
@@ -79,9 +80,24 @@ sub testLoadOptions {
         my $optHR = {'verbose' => 1, 'debug' => 1};
         $obj->loadOptions($optHR);
         {
-            ok( $obj->{'verbose'}, "verbose and debg sets verbose");
-            ok( $obj->{'debug'}, "verbose and debg sets debug");
+            ok( $obj->{'verbose'}, "verbose and debug sets verbose");
+            ok( $obj->{'debug'}, "verbose and debug sets debug");
         }
+    }
+
+    # _argvAR
+    {
+        @ARGV = qw(--verbose --debug);
+        my $obj = $CLASS->new();
+        # loadOptions called to do this...
+        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug'], "ARGV was captured.");
+    }
+    # _optHR
+    {
+        @ARGV = qw(--debug);
+        my $obj = $CLASS->new();
+        # loadOptions called to do this...
+        ok($obj->{'_optHR'}->{'debug'}, "optHR was captured.");
     }
 
 }
@@ -135,7 +151,7 @@ sub testParseCli {
 }
 
 sub testSayAndSayDebugAndSayVerbose {
-    plan( tests => 9 );
+    plan( tests => 18 );
 
     # --debug set
     {
@@ -173,8 +189,54 @@ sub testSayAndSayDebugAndSayVerbose {
             stdout_unlike { $obj->sayDebug(   $text ); } $expectRE, "no flag and sayDebug";
             stdout_unlike { $obj->sayVerbose( $text ); } $expectRE, "no flag and sayVerbose";
             stdout_like   { $obj->say(        $text ); } $expectRE, "no flag and say";
+
         }
     }
+
+    # $object parameter is string.
+    {
+        @ARGV = qw(--debug);
+        my $obj = $CLASS->new();
+        my $text = 'Say with scalar object.';
+        my $object = 'The second object';
+        my $expect = "$text\n$object";
+        {
+            stdout_is { $obj->sayDebug(   $text, $object ); } $expect, "--Scalar object and sayDebug";
+            stdout_is { $obj->sayVerbose( $text, $object ); } $expect, "--Scalar object and sayVerbose";
+            stdout_is { $obj->say(        $text, $object ); } $expect, "--Scalar object and say";
+        }
+    }
+
+    # $object parameter is hashRef.
+    {
+        @ARGV = qw(--debug);
+        my $obj = $CLASS->new();
+        my $text = 'Say with hashRef object.';
+        my $object = {'key'=>'value'};
+        my $objectString = Dumper($object);
+        my $expect = "$text\n$objectString";
+        {
+            stdout_is { $obj->sayDebug(   $text, $object ); } $expect, "--hashRef object and sayDebug";
+            stdout_is { $obj->sayVerbose( $text, $object ); } $expect, "--hashRef object and sayVerbose";
+            stdout_is { $obj->say(        $text, $object ); } $expect, "--hashRef object and say";
+        }
+    }
+
+    # $object parameter is arrayRef.
+    {
+        @ARGV = qw(--debug);
+        my $obj = $CLASS->new();
+        my $text = 'Say with arrayRef object.';
+        my $object = ['key', 'value'];
+        my $objectString = Dumper($object);
+        my $expect = "$text\n$objectString";
+        {
+            stdout_is { $obj->sayDebug(   $text, $object ); } $expect, "--arrayRef object and sayDebug";
+            stdout_is { $obj->sayVerbose( $text, $object ); } $expect, "--arrayRef object and sayVerbose";
+            stdout_is { $obj->say(        $text, $object ); } $expect, "--arrayRef object and say";
+        }
+    }
+
 }
 
 sub testFixupTildePath {

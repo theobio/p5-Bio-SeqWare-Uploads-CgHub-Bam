@@ -53,12 +53,13 @@ Defaults may be provided by a config file
 
 =item --version
 
-If specified, the version will be printed and the program will exit.
+If specified, the version will be printed and the program will exit. Ignored
+if specified in a config file
 
 =item --help
 
 If specifed, a help message will be printed. Complete documentation is
-provided via perldoc upload-cghub-bam.
+provided via perldoc upload-cghub-bam. Ignored if specified in a config file
 
 =back
 
@@ -71,6 +72,8 @@ provided via perldoc upload-cghub-bam.
 The config file, provides defaults for options. See the CONFIG FILE section
 for more details. This can be an absolute or relative path. If no config file
 is specified, the default config file looked for will be "~/.seqware/settings".
+Note: If specified in a config file, this is currently ignored, by may be
+implemented eventually to allow multiple cascading config files.
 
 =back
 
@@ -86,7 +89,9 @@ information.
 =item --debug
 
 If specified, lots of extra information is printed when running, including the
-full list of option values. Implies --verbose.
+full list of option values. Implies --verbose. Note: this may cause passwords
+to be dumped in plain text if provided on the command line or in the config
+file.
 
 =back
 
@@ -118,7 +123,8 @@ database.
 =head2 Description
 
 A config file is used as the defaults for options. Any options, except
-the --config parameter, can be read from the conifig file. Options specified
+the --help, --version, and (for now) --config parameters can be read from the
+conifig file. Options specified
 on the command line will over-ride anything from the config file. If no
 config file is specified, a default config file "~/.seqware/settings will be
 looked for. This file should be readable only by the user; chmod 600 this

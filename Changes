@@ -11,3 +11,4 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
  [API] - Add --verbose and --debug options
  [FEATURE] - Amount of output varies based on --verbose and --debug
  [MAJOR] - Add config file
+ [DEV] - refactor new(); separate instantiation details into _init()

@@ -6,6 +6,7 @@ use warnings       # Enable all optional warnings
    FATAL => 'all';      # Make all warnings fatal.
 use autodie;       # Make core perl die on errors instead of returning undef.
 use Carp;          # User-space excpetions
+use Data::Dumper;  # Simple data structure to string converter.
 
 use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
@@ -58,9 +59,9 @@ sub new {
     my $self = {};
     bless $self, $class;
 
-    $self->loadOptions( $self->parseCli() );
-    return $self;
+    return $self->init();
 }
+
 
 =head1 INSTANCE METHODS
 
@@ -82,6 +83,35 @@ sub run {
 
 =head1 INTERNAL METHODS
 
+=head2 init()
+
+    my $self->init();
+
+Sets up internal object data by loading cli options (including the config
+filename) then loading the config file options and laying the cli options
+over them. The combined options (hashref) is then passed to loadOptions which
+does the validation and sets the final state of the internal object data.
+
+Returns the fully initialized application object ready for running.
+
+=cut
+
+sub init {
+    my $self = shift;
+
+    my $cliOptionsHR = $self->parseCli();
+    my $configFile = $cliOptionsHR->{'config'};
+    my $configOptionsHR = $self->getConfigOptions( $configFile );
+    my %opt = ( %$configOptionsHR, %$cliOptionsHR );
+    $self->loadOptions( \%opt );
+
+    $self->sayDebug("Loading config file:", $configFile);
+    $self->sayDebug("Config options:", $configOptionsHR);
+    $self->sayDebug("CLI options:", $cliOptionsHR);
+
+    return $self;
+}
+
 =head2 parseCli
 
     my $optHR = $obj->parseCli()
@@ -98,19 +128,14 @@ upload-cghub-bam.
 sub parseCli {
     my $self = shift;
 
-    # Values from config file (not implemented yet)
-    my $configOptionsHR = {};
-
     # Default values
-    my $optionDefaultsHR = {
+    my %opt = (
         'config' => Bio::SeqWare::Config->getDefaultFile(),
-    };
+    );
 
-    # Combine local defaults with (over-ride by) config file options
-    my %opt = ( %$optionDefaultsHR, %$configOptionsHR );
-
-    # Record command line arguments
-    $opt{'argv'} = [ @ARGV ];
+    # Record copy of command line arguments.
+    my @argv = @ARGV;
+    $opt{'argvAR'} = \@argv;
 
     # Override local/config options with command line options
     GetOptions(
@@ -194,9 +219,9 @@ sub fixupTildePath {
 
    $self->loadOptions({ key => value, ... });
 
-Loads the provided key => value settings into the object. Returns nothing on
-success. As this does validation, it can die with lots of different messages.
-It also does cross-validation and fills in implicit options, i.e. it sets
+Valdates and loads the provided key => value settings into the object.
+Returns nothing on success. As this does validation, it can die with lots of
+different messages. It also does cross-validation and fills in implicit options, i.e. it sets
 --verbose if --debug was set.
 
 =cut
@@ -209,16 +234,23 @@ sub loadOptions {
     if ($optHR->{'debug'}) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
 
     $self->{'_optHR'} = $optHR;
+    $self->{'_argvAR'} = $optHR->{'argvAR'}
 
 }
 
 =head2 sayDebug
 
    $self->sayDebug("Something printed only if --debug was set.");
+   $self->sayDebug("Something" $object );
 
 Used to output text conditional on the --debug flag. Nothing is output if
 --debug is not set.
 
+If an object parameter is passed, it will be printed on the following line.
+Normal stringification is performed, so $object can be anything, including
+another string, but if it is a hash-ref or an array ref, it will be formated
+with Data::Dumper before printing.
+ 
 See also say, sayVerbose.
 
 =cut
@@ -226,20 +258,35 @@ See also say, sayVerbose.
 sub sayDebug {
     my $self = shift;
     my $message = shift;
+    my $object = shift;
     unless ( $self->{'debug'} ) {
         return;
     }
-    print( $message );
+    if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
+        print( $message . "\n" . Dumper($object) );
+    }
+    elsif (defined $object) {
+        print( $message . "\n" . $object );
+    }
+    else {
+        print( $message );
+    }
 }
 
 =head2 sayVerbose
 
    $self->sayVerbose("Something printed only if --verbose was set.");
+   $self->sayVerbose("Something", $object);
 
 Used to output text conditional on the --verbose flag. Nothing iw output if
 --verbose was not set. Note setting --debug automatically implies --verbose,
 so sayVerbose will output text when --debug was set even if --verbose never
 was expcicitly passed 
+
+If an object parameter is passed, it will be printed on the following line.
+Normal stringification is performed, so $object can be anything, including
+another string, but if it is a hash-ref or an array ref, it will be formated
+with Data::Dumper before printing.
 
 See also say, sayDebug.
 
@@ -248,18 +295,28 @@ See also say, sayDebug.
 sub sayVerbose {
     my $self = shift;
     my $message = shift;
+    my $object = shift;
     unless ( $self->{'verbose'} ) {
         return;
     }
-    print( $message );
+    if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
+        print( $message . "\n" . Dumper($object) );
+    }
+    elsif (defined $object) {
+        print( $message . "\n"  . $object );
+    }
+    else {
+        print( $message );
+    }
 }
 
 =head2 say
 
    $self->say("Something to print regardless of --verbose and --debug");
+   $self->say("Something", $object);
 
-Output text just like print, but wrapped so it is cognitively linked with
-sayVerbose and sayDebug.
+Output text just like print, but takes object option like sayVerbose and
+sayDebug.
 
 See also sayVerbose, sayDebug.
 
@@ -268,7 +325,16 @@ See also sayVerbose, sayDebug.
 sub say {
     my $self = shift;
     my $message = shift;
-    print( $message );
+    my $object = shift;
+    if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
+        print( $message . "\n" . Dumper($object) );
+    }
+    elsif (defined $object) {
+        print( $message . "\n"  . $object );
+    }
+    else {
+        print( $message );
+    }
 }
 
 =head2 makeUuid
