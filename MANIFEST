@@ -1,11 +1,19 @@
 .gitignore
 Build.PL
 Changes
+bin/upload-cghub-bam
 lib/Bio/SeqWare/Uploads/CgHub/Bam.pm
 MANIFEST			This list of files
+MANIFEST.SKIP
 README.md
 t/00-load.t
+t/Bam.t
 t/manifest.t
 t/pod-coverage.t
 t/pod.t
+t/upload-cghub-bam.t
+'t/Data/test with space.config'
 TODO.md
+Makefile.PL
+META.yml
+META.json

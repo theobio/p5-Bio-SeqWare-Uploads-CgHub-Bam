@@ -2,6 +2,7 @@
 
 # ROADMAP
 These changes are planned for the release specified. Date and version indicate when they are expected to be released.
+2014-09-06 0.000.002 [MAJOR] - Tag bam files for upload.
 
 # APPROVED / REJECTED
 These changes are planned, or will NOT be done, but have not been assigned to a specific future release. Date and version indicate when they were moved from "In consideration". 

@@ -13,11 +13,13 @@ my $builder = Module::Build->new(
         'Module::Build' => 0,
     },
     build_requires => {
-        'Test::More' => 0,
-        'Test::Script::Run' => 0,
+        'Test::Exception' => 0,
+        'Test::Output'    => 0,
     },
     requires => {
-        'perl'=> '5.014',
+        'perl'          => '5.014',
+        'File::HomeDir' => 0,
+        'Data::GUID'    => 0,
     },
     add_to_cleanup     => [ 'p5-Bio-SeqWare-Uploads-CgHub-Bam-*' ],
     create_makefile_pl => 'traditional',

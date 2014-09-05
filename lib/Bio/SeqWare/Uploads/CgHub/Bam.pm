@@ -10,13 +10,12 @@ use autodie;       # Make core perl die on errors instead of returning undef.
 use Carp;          # User-space excpetions
 use Data::Dumper;  # Simple data structure to string converter.
 use Sys::Hostname; # Get the hostname for logging
-
-# Cpan modules
 use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
-
-use File::HomeDir qw(home);             # Finding the home directory is hard.
 use File::Spec::Functions qw(catfile);  # Generic file handling.
+
+# Cpan modules
+use File::HomeDir qw(home);             # Finding the home directory is hard.
 use Data::GUID;                         # Unique uuids.
 
 # GitHub only modules
@@ -31,11 +30,11 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 =head1 VERSION
 
-Version 0.000.001
+Version 0.000.002
 
 =cut
 
-our $VERSION = '0.000001';
+our $VERSION = '0.000002';
 
 =head1 SYNOPSIS
 
@@ -487,9 +486,9 @@ You can install this module directly from github using cpanm
    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
    # Any specific release:
-   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.031.tar.gz
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.002.tar.gz
 
-You can also download a release (zipped file) from github at
+You can also manually download a release (zipped file) from github at
 L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases>.
 
 Installing is then a matter of unzipping it, changing into the unzipped

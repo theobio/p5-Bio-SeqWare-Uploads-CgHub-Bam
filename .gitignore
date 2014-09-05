@@ -5,7 +5,7 @@ Build
 Build.bat
 !Build/   # Commonly used directory for distributed user build script
 MYMETA.*
-# META.*  # NO - needed if remote git repo is to be installable (cpanm)
+META.*
 .build/
 _build/
 cover_db/
@@ -16,8 +16,8 @@ pod2htm*.tmp
 pm_to_blib
 
 # Perl: this repo
-p5-Bio-SeqWare-Uploads-CgHub-Bam-*
-p5-Bio-SeqWare-Uploads-CgHub-Bam-*.tar.gz
+Bio-SeqWare-Uploads-CgHub-Bam-*
+Bio-SeqWare-Uploads-CgHub-Bam-*.tar.gz
 
 # OS: Mac OS X
 .DS_Store
