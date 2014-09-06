@@ -63,7 +63,7 @@ sub testRun {
 }
 
 sub testLoadOptions {
-    plan( tests => 10 );
+    plan( tests => 12 );
 
     # --verbose only
     {
@@ -116,6 +116,7 @@ sub testLoadOptions {
         # loadOptions called to do this...
         is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug'], "ARGV was captured.");
     }
+
     # _optHR
     {
         @ARGV = qw(--debug);
@@ -124,10 +125,25 @@ sub testLoadOptions {
         ok($obj->{'_optHR'}->{'debug'}, "optHR was captured.");
     }
 
+    # _argumentsAR
+    {
+        my $message = "_argumentsAR not set by default";
+        @ARGV = qw(--verbose);
+        my $obj = $CLASS->new();
+        # loadOptions called to do this...
+        ok(! $obj->{'_argumensAR'}, $message);
+    }
+    {
+        my $message = "_argumentsAR loaded into object.";
+        @ARGV = qw(--verbose arg1 arg2);
+        my $obj = $CLASS->new();
+        # loadOptions called to do this...
+        is_deeply($obj->{'_argumentsAR'}, ['arg1', 'arg2'], $message);
+    }
 }
 
 sub testParseCli {
-    plan( tests => 8 );
+    plan( tests => 12 );
     my $obj = $CLASS->new();
 
     # --verbose
@@ -186,9 +202,35 @@ sub testParseCli {
          is( $opt->{'config'}, "some/new.cfg", $message );
     }
 
+    # argvAR is set with original options, no arguments is a valid result.
+    {
+        my $message = "original command line availabe as array ref";
+        @ARGV = qw(--verbose --debug --log);
+        my $opt = $obj->parseCli();
+        is_deeply( $opt->{'argvAR'}, ['--verbose', '--debug', '--log']
+        , $message );
+        is_deeply( $opt->{'argumentsAR'}, [], $message );
+    }
+
+    {
+        my $message = "key \"argumentsAR\" is contains arguments";
+        @ARGV = qw(--verbose --debug argment1 argment2);
+        my $opt = $obj->parseCli();
+        is_deeply( $opt->{'argumentsAR'}, ['argment1', 'argment2'], $message );
+    }
+
+    # argumentsAR works if mixed, and with "--"
+    {
+        my $message = "arguments can be mixed in, and -- works";
+        @ARGV = qw(--verbose argment1 --debug argment2 -- --log);
+        my $opt = $obj->parseCli();
+
+        is_deeply( $opt->{'argumentsAR'}, ['argment1', 'argment2', '--log'], $message );
+    }
 }
 
 sub testSayAndSayDebugAndSayVerbose {
+ 
     plan( tests => 21 );
 
     # --debug set

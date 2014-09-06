@@ -148,10 +148,30 @@ sub init {
 
 Parses the options and arguments from the command line into a hashref with the
 option name as the key. Parsing is done with GetOpt::Long. Some options are
-"short-circuit" options, if given all other options are ignored (i.e. --version
-or --help). If an unknown option is provided on the command line, this will
-exit with a usage message. For options see the OPTIONS section in
-upload-cghub-bam.
+"short-circuit" options (i.e. --version or --help). When encountered all
+following options and argments will be ignored. Once all options are removed
+from the command line, what remains are arguments. The presence of an unknown
+option is an error. A stand-alone "--" prevents parsing anything following as
+options, they will be used as arguments. This allows, for example, a filename
+argument like "--config", however confusing that might be...
+
+For a list of options see the OPTIONS section in upload-cghub-bam.
+
+If no short circuit options and no parsing errors occur, will return a hash-ref
+of all options, those not found having a value of undefined (including boolean
+flags). In addition the following keys are present
+
+=over 3
+
+=item "_argvAR"
+
+The original command line options and arguments, as an array ref.
+
+=item "_argumentsAR"
+
+The arguments left after parsing options out of the command line, as an array ref.
+
+=back
 
 =cut
 
@@ -188,6 +208,10 @@ sub parseCli {
         },
 
     ) or pod2usage( { -verbose => 0, -exitval => 2 });
+
+    my @arguments = @ARGV;
+
+    $opt{'argumentsAR'} = \@arguments;
 
     return \%opt;
 }
@@ -267,7 +291,8 @@ sub loadOptions {
     if ($optHR->{'log'}    ) { $self->{'log'}     = 1; }
 
     $self->{'_optHR'} = $optHR;
-    $self->{'_argvAR'} = $optHR->{'argvAR'}
+    $self->{'_argvAR'} = $optHR->{'argvAR'};
+    $self->{'_argumentsAR'} = $optHR->{'argumentsAR'};
 
 }
 
