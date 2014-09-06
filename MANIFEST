@@ -21,6 +21,7 @@ t/Commands/do-status-update.t
 t/Commands/do-status-remote.t
 t/Commands/do-status-local.t
 't/Data/test with space.config'
+'t/Data/samplesToUpload.txt'
 TODO.md
 Makefile.PL
 META.yml

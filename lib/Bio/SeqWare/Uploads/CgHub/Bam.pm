@@ -303,10 +303,10 @@ sub loadArguments {
 
     my $command = shift @arguments;
     unless( defined $command ) {
-        croak "Must specify a command. See --help.\n";
+        croak "Must specify a command. Try --help.\n";
     }
     unless(exists $COMMAND_DISPATCH_HR->{"$command"}) {
-        croak "I don't know the command '$command'.\n";
+        croak "I don't know the command '$command'. Try --help.\n";
     }
     $self->{'command'} = $command;
 
@@ -319,7 +319,7 @@ sub loadArguments {
     $self->{'sampleFile'} = $sampleFile;   # May be undefined
 
     if (@arguments) {
-        croak "Too many arguments for cammand '$command'.\n";
+        croak "Too many arguments for cammand '$command'. Try --help.\n";
     }
 
     return 1;

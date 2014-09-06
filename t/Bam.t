@@ -4,7 +4,8 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 11;     # Main test module; run this many subtests
+use Test::More 'tests' => 12
+;     # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
@@ -21,7 +22,8 @@ my $TEST_CFG = File::Spec->catfile( "t", "Data", "test with space.config" );
 subtest( 'new()'      => \&testNew );
 subtest( 'run()'      => \&testRun );
 subtest( 'parseCli()'    => \&testParseCli    );
-subtest( 'loadOptions()' => \&testLoadOptions );
+subtest( 'loadOptions()'   => \&testLoadOptions );
+subtest( 'loadArguments()' => \&testLoadArguments );
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
 subtest( 'say(),sayDebug(),SayVerbose()' => \&testSayAndSayDebugAndSayVerbose );
@@ -136,6 +138,68 @@ sub testLoadOptions {
         my $obj = $CLASS->new();
         # loadOptions called to do this...
         is_deeply($obj->{'_argumentsAR'}, ['status-local'], $message);
+    }
+}
+
+sub testLoadArguments {
+    plan( tests => 8 );
+
+    @ARGV = ("status-local");
+    my $obj = $CLASS->new();
+    {
+        my $command = "status-local";
+        $obj->loadArguments([$command]);
+        {
+            my $message = "1 arg = command";
+            my $got = $obj->{'command'};
+            my $want = $command;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "1 arg = no sample file";
+            ok( ! $obj->{'sampleFile'}, $message);
+        }
+    }
+    {
+        my $command = "status-local";
+        my $sampleFileName = "t/Data/samplesToUpload.txt";
+        $obj->loadArguments([$command, $sampleFileName]);
+        {
+            my $message = "2 args: 1st = command";
+            my $got = $obj->{'command'};
+            my $want = $command;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "2 args: 2nd = sampleFile";
+            my $got = $obj->{'sampleFile'};
+            my $want = $sampleFileName;
+            is( $got, $want, $message );
+        }
+    }
+    {
+        my $message = "error if no command specified";
+        my $errorRE = qr/^Must specify a command\. Try --help\.\n/;
+        throws_ok( sub { $obj->loadArguments([]); }, $errorRE, $message );
+    }
+    {
+        my $message = "error if unknown command specified";
+        my $command = "bad-command-oops";
+        my $errorRE = qr/I don't know the command 'bad-command-oops'\. Try --help\.\n/;
+        throws_ok( sub { $obj->loadArguments(['bad-command-oops']); }, $errorRE, $message );
+    }
+    {
+        my $message = "error if 2nd argument is not an existing sample file";
+        my $noSuchFile = $obj->makeUuid();
+        my $errorRE = qr/I can't find the sample file '$noSuchFile'\.\n/;
+        throws_ok( sub { $obj->loadArguments(['status-local', $noSuchFile]); }, $errorRE, $message );
+    }
+    {
+        my $message = "error if more than 2 arguments";
+        my $command = "status-local";
+        my $sampleFileName = "t/Data/samplesToUpload.txt";
+        my $errorRE = qr/Too many arguments for cammand '$command'. Try --help.\n/;
+        throws_ok( sub { $obj->loadArguments([$command, $sampleFileName, 'foo']); }, $errorRE, $message );
     }
 }
 
