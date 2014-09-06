@@ -35,6 +35,7 @@ subtest( 'logifyMessage()' => \&testLogifyMessage);
 sub testNew {
     plan( tests => 2 );
 
+    @ARGV = ('status-local');
     my $obj = $CLASS->new();
     {
         my $message = "Returns object of correct type";
@@ -63,10 +64,11 @@ sub testRun {
 }
 
 sub testLoadOptions {
-    plan( tests => 12 );
+    plan( tests => 11 );
 
     # --verbose only
     {
+        @ARGV = qw(--verbose status-local);
         my $obj = $CLASS->new();
         my $optHR = {'verbose' => 1};
         $obj->loadOptions($optHR);
@@ -77,6 +79,7 @@ sub testLoadOptions {
     }
     # --debug only
     {
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $optHR = {'debug' => 1};
         $obj->loadOptions($optHR);
@@ -87,6 +90,7 @@ sub testLoadOptions {
     }
     # --verbose && --debug
     {
+        @ARGV = qw(--debug --verbose status-local);
         my $obj = $CLASS->new();
         my $optHR = {'verbose' => 1, 'debug' => 1};
         $obj->loadOptions($optHR);
@@ -98,12 +102,14 @@ sub testLoadOptions {
 
     # --log
     {
+        @ARGV = qw(--log status-local);
         my $obj = $CLASS->new();
         my $optHR = { 'log' => 1 };
         $obj->loadOptions($optHR);
         ok($obj->{'_optHR'}->{'log'}, "log set if needed.");
     }
     {
+        @ARGV = qw(status-local);
         my $obj = $CLASS->new();
         $obj->loadOptions({});
         ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
@@ -111,51 +117,43 @@ sub testLoadOptions {
 
     # _argvAR
     {
-        @ARGV = qw(--verbose --debug);
+        @ARGV = qw(--verbose --debug status-local);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
-        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug'], "ARGV was captured.");
+        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug', 'status-local'], "ARGV was captured.");
     }
 
     # _optHR
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
         ok($obj->{'_optHR'}->{'debug'}, "optHR was captured.");
     }
 
-    # _argumentsAR
-    {
-        my $message = "_argumentsAR not set by default";
-        @ARGV = qw(--verbose);
-        my $obj = $CLASS->new();
-        # loadOptions called to do this...
-        ok(! $obj->{'_argumensAR'}, $message);
-    }
     {
         my $message = "_argumentsAR loaded into object.";
-        @ARGV = qw(--verbose arg1 arg2);
+        @ARGV = qw(--verbose status-local);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
-        is_deeply($obj->{'_argumentsAR'}, ['arg1', 'arg2'], $message);
+        is_deeply($obj->{'_argumentsAR'}, ['status-local'], $message);
     }
 }
 
 sub testParseCli {
-    plan( tests => 12 );
+    plan( tests => 9 );
     my $obj = $CLASS->new();
 
     # --verbose
     {
          my $message = "--verbose flag default is unset";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          ok( ! $opt->{'verbose'}, $message );
     }
     {
          my $message = "--verbose flag can be set";
-         @ARGV = qw(--verbose);
+         @ARGV = qw(--verbose status-local);
          my $opt = $obj->parseCli();
          ok( $opt->{'verbose'}, $message );
     }
@@ -163,13 +161,13 @@ sub testParseCli {
     # --debug
     {
          my $message = "--debug flag default is unset";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          ok( ! $opt->{'debug'}, $message );
     }
     {
          my $message = "--debug flag can be set";
-         @ARGV = qw(--debug);
+         @ARGV = qw(--debug status-local);
          my $opt = $obj->parseCli();
          ok( $opt->{'debug'}, $message );
     }
@@ -177,13 +175,13 @@ sub testParseCli {
     # --log
     {
          my $message = "--log flag default is unset";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          ok( ! $opt->{'log'}, $message );
     }
     {
          my $message = "--log flag can be set";
-         @ARGV = qw(--log);
+         @ARGV = qw(--log status-local);
          my $opt = $obj->parseCli();
          ok( $opt->{'log'}, $message );
     }
@@ -191,42 +189,26 @@ sub testParseCli {
     # --config
     {
          my $message = "--config default is set";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          is( $opt->{'config'}, Bio::SeqWare::Config->getDefaultFile(), $message );
     }
     {
          my $message = "--config flag can be set";
-         @ARGV = qw(--config some/new.cfg);
+         @ARGV = qw(--config some/new.cfg status-local);
          my $opt = $obj->parseCli();
          is( $opt->{'config'}, "some/new.cfg", $message );
     }
 
-    # argvAR is set with original options, no arguments is a valid result.
     {
-        my $message = "original command line availabe as array ref";
-        @ARGV = qw(--verbose --debug --log);
+        my $message = "key \"argumentsAR\" contains arguments";
+        @ARGV = qw(--verbose --debug status-local);
         my $opt = $obj->parseCli();
-        is_deeply( $opt->{'argvAR'}, ['--verbose', '--debug', '--log']
-        , $message );
-        is_deeply( $opt->{'argumentsAR'}, [], $message );
-    }
-
-    {
-        my $message = "key \"argumentsAR\" is contains arguments";
-        @ARGV = qw(--verbose --debug argment1 argment2);
-        my $opt = $obj->parseCli();
-        is_deeply( $opt->{'argumentsAR'}, ['argment1', 'argment2'], $message );
+        is_deeply( $opt->{'argumentsAR'}, ['status-local'], $message );
     }
 
     # argumentsAR works if mixed, and with "--"
-    {
-        my $message = "arguments can be mixed in, and -- works";
-        @ARGV = qw(--verbose argment1 --debug argment2 -- --log);
-        my $opt = $obj->parseCli();
-
-        is_deeply( $opt->{'argumentsAR'}, ['argment1', 'argment2', '--log'], $message );
-    }
+    # Add test later.
 }
 
 sub testSayAndSayDebugAndSayVerbose {
@@ -235,7 +217,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --debug set
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
         my $expectRE = qr/^$text$/;
@@ -248,7 +230,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --verbose set
     {
-        @ARGV = qw(--verbose);
+        @ARGV = qw(--verbose status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with verbose on';
         my $expectRE = qr/^$text$/;
@@ -261,7 +243,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --no flag set
     {
-        @ARGV = qw();
+        @ARGV = qw(status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with no flag';
         my $expectRE = qr/^$text$/;
@@ -275,7 +257,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is string.
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with scalar object.';
         my $object = 'The second object';
@@ -289,7 +271,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is hashRef.
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with hashRef object.';
         my $object = {'key'=>'value'};
@@ -304,7 +286,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is arrayRef.
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with arrayRef object.';
         my $object = ['key', 'value'];
@@ -319,7 +301,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --debug and --log set
     {
-        @ARGV = qw(--debug --log);
+        @ARGV = qw(--debug --log status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
         my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
@@ -340,6 +322,7 @@ sub testSayAndSayDebugAndSayVerbose {
 sub testFixupTildePath {
     plan( tests => 5 );
 
+    @ARGV = qw(status-local);
     my $obj = $CLASS->new();
     my $home = home();
     is( $obj->fixupTildePath( "a/path/" ), "a/path/", "path without tilde" );
@@ -354,7 +337,7 @@ sub testGetConfigOptions {
 
     # Testing with default config file
     {
-        @ARGV = qw();
+        @ARGV = qw(status-local);
         my $obj = $CLASS->new();
 
         my $defaultConfig = Bio::SeqWare::Config->getDefaultFile();
@@ -384,7 +367,7 @@ sub testGetConfigOptions {
 
     # Testing with test config file
     {
-        @ARGV = ('--config', "$TEST_CFG");
+        @ARGV = ('--config', "$TEST_CFG", 'status-local');
         my $obj = $CLASS->new();
         {
             my $message = "Test config options available";
@@ -399,7 +382,7 @@ sub testGetConfigOptions {
 sub testMakeUuid {
     plan( tests => 3);
 
-    @ARGV = qw();
+    @ARGV = qw(status-local);
     my $obj = $CLASS->new();
 
     my $uuid = $obj->makeUuid();
@@ -430,7 +413,7 @@ sub testGetTimestamp {
 sub testGetLogPrefix {
     plan( tests => 1);
 
-     @ARGV = qw();
+     @ARGV = qw(status-local);
     my $obj = $CLASS->new();
 
     my $message = "Log prefix is formatted correctly";
@@ -446,7 +429,7 @@ sub testGetLogPrefix {
 sub testLogifyMessage {
     plan( tests => 4 );
 
-    @ARGV = qw();
+    @ARGV = qw(status-local);
     my $obj = $CLASS->new();
     my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
     my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';

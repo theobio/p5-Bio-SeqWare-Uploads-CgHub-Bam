@@ -21,8 +21,18 @@ use Data::GUID;                         # Unique uuids.
 # GitHub only modules
 use Bio::SeqWare::Config;   # Config file parsing.
 
-my
- $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
+my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
+
+my $COMMAND_DISPATCH_HR = {
+    'select'        => \&do_select,
+    'meta-generate' => \&do_metaGenerate,
+    'meta-validate' => \&do_metaValidate,
+    'meta-upload'   => \&do_metaUpload,
+    'file-upload'   => \&do_fileUpload,
+    'status-update' => \&do_statusUpdate,
+    'status-remote' => \&do_statusRemote,
+    'status-local'  => \&do_statusLocal,
+};
 
 =head1 NAME
 
@@ -106,10 +116,14 @@ returns 1 if succeds, or dies with an error message.
 
 sub run {
     my $self = shift;
+
+    $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
     return 1;
 }
 
 =head1 INTERNAL METHODS
+
+=cut
 
 =head2 init()
 
@@ -133,6 +147,7 @@ sub init {
     my $configOptionsHR = $self->getConfigOptions( $configFile );
     my %opt = ( %$configOptionsHR, %$cliOptionsHR );
     $self->loadOptions( \%opt );
+    $self->loadArguments( $opt{'argumentsAR'} );
 
     # Retrspectve logging (as logging being configured above.)
     $self->sayDebug("Loading config file:", $configFile);
@@ -246,31 +261,6 @@ sub getConfigOptions {
     return $configParser->getAll();
 }
 
-=head2 fixupTildePath
-
-    my $path = $self->fixupTildePath( $filePath );
-
-Perl does not recognize the unix convention that file paths begining with
-a tilde (~) are relative to the users home directory. This is function makes
-that happen *lexically*. There is no validation that the output file or path
-actually makes sense. If the the input path does not begin with a ~, it is
-returned without change. Uses File::HomeDir to handle finding a home dir.
-
-=cut
-
-sub fixupTildePath {
-    my $self = shift;
-    my $path = shift;
-
-    unless ($path && $path =~ /^~/) {
-        return $path;
-    }
-
-    my $home = home();
-    $path =~ s/^~/$home/;
-    return $path;
-}
-
 =head2 loadOptions
 
    $self->loadOptions({ key => value, ... });
@@ -294,6 +284,158 @@ sub loadOptions {
     $self->{'_argvAR'} = $optHR->{'argvAR'};
     $self->{'_argumentsAR'} = $optHR->{'argumentsAR'};
 
+}
+
+=head2 loadArguments
+
+   $self->loadArguments(["arg1", "arg2"]);
+
+Valdates and loads the CLI arguments (What is left over after removing options
+up to and including a lone "--"). Returns nothing on success. As this does
+validation, it can die with lots of different messages.
+
+=cut
+
+sub loadArguments {
+    my $self = shift;
+    my $argumentsAR = shift;
+    my @arguments = @{$argumentsAR};
+
+    my $command = shift @arguments;
+    unless( defined $command ) {
+        croak "Must specify a command. See --help.\n";
+    }
+    unless(exists $COMMAND_DISPATCH_HR->{"$command"}) {
+        croak "I don't know the command '$command'.\n";
+    }
+    $self->{'command'} = $command;
+
+    my $sampleFile = shift @arguments;
+    if (defined $sampleFile) {
+        unless( -f $sampleFile ) {
+            croak "I can't find the sample file '$sampleFile'.\n";
+        }
+    }
+    $self->{'sampleFile'} = $sampleFile;   # May be undefined
+
+    if (@arguments) {
+        croak "Too many arguments for cammand '$command'.\n";
+    }
+
+    return 1;
+}
+
+=head2 do_select
+
+Called automatically by runner framework to implement the select command.
+Not intended to be called directly.
+
+=cut
+
+sub do_select {
+    return 1;
+}
+
+=head2 do_metaGenerate
+
+Called automatically by runner framework to implement the meta-generate command.
+Not intended to be called directly.
+
+=cut
+
+sub do_metaGenerate {
+    return 1;
+}
+
+=head2 do_metaValidate
+
+Called automatically by runner framework to implement the meta-validate command.
+Not intended to be called directly.
+
+=cut
+
+sub do_metaValidate {
+    return 1;
+}
+
+=head2 do_metaUpload
+
+Called automatically by runner framework to implement the meta-upload command.
+Not intended to be called directly.
+
+=cut
+
+sub do_metaUpload {
+    return 1;
+}
+
+=head2 do_fileUpload
+
+Called automatically by runner framework to implement the file_upload command.
+Not intended to be called directly.
+
+=cut
+
+sub do_fileUpload {
+    return 1;
+}
+
+=head2 do_statusUpdate
+
+Called automatically by runner framework to implement the status-update command.
+Not intended to be called directly.
+
+=cut
+
+sub do_statusUpdate {
+    return 1;
+}
+
+=head2 do_statusRemote
+
+Called automatically by runner framework to implement the status-remote command.
+Not intended to be called directly.
+
+=cut
+
+sub do_statusRemote {
+    return 1;
+}
+
+=head2 do_statusLocal
+
+Called automatically by runner framework to implement the status-local command.
+Not intended to be called directly.
+
+=cut
+
+sub do_statusLocal {
+    return 1;
+}
+
+=head2 fixupTildePath
+
+    my $path = $self->fixupTildePath( $filePath );
+
+Perl does not recognize the unix convention that file paths begining with
+a tilde (~) are relative to the users home directory. This is function makes
+that happen *lexically*. There is no validation that the output file or path
+actually makes sense. If the the input path does not begin with a ~, it is
+returned without change. Uses File::HomeDir to handle finding a home dir.
+
+=cut
+
+sub fixupTildePath {
+    my $self = shift;
+    my $path = shift;
+
+    unless ($path && $path =~ /^~/) {
+        return $path;
+    }
+
+    my $home = home();
+    $path =~ s/^~/$home/;
+    return $path;
 }
 
 =head2 getLogPrefix

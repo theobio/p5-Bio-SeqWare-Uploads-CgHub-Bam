@@ -2,6 +2,7 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
 0.000.002 - Tag files for upload
  [ADD] - Add CLI argument extraction.
+ [MAJOR] - Add command processing framework.
 
 0.000.001 - App Framework
  [MAJOR] - Initial package skeleton.

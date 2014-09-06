@@ -29,9 +29,9 @@ $app->run();
 
 =head1 SYNOPSIS
 
-  upload-cghub-bam [options]
+  upload-cghub-bam [options] command [arguments]
 
-  options:
+  [options]:
     --version  Print the version
     --help     Extended option descriptions
 
@@ -41,12 +41,102 @@ $app->run();
 
     --config   The config file, default = ~/.seqware/settings
 
-For more option details, try C<upload-cghub-bam --help>. For full documentation,
+  command:
+    select [file]
+        Load samples specified in the file into a db for running.
+    meta-generate
+        Assemble the metadata xml files for one sample's bam file
+    meta-validate
+        Check one bam's metadata xml files for validity
+    meta-upload
+        Upload one bam's metadata xml files to cghub
+    file-upload
+        Upload one bam file to cghub
+    status-update
+        Verify one bam file is fully available at cghub.
+
+    status-remote
+        List status for bam files remotely
+
+
+For more details, try C<upload-cghub-bam --help>. For full documentation,
 try C<perldoc upload-cghub-bam>.
+
+=head1 DESCRIPTION
+
+This program is used to upload bam files to CgHub, which is a relatively
+complex stepwise process involving tracking progress and errors using a
+database. Each step is a separate command. An example processing sequence
+looks like:
+
+  upload-cghub-bam -wf 39 select sampleFile.txt
+  upload-cghub-bam meta-generate
+  upload-cghub-bam meta-validate
+  upload-cghub-bam meta-upload
+  upload-cghub-bam file-upload
+  upload-cghub-bam status-update
+
+The status of bam file uploads can be queried like:
+
+  upload-cghub-bam status-remote
+  upload-cghub-bam status-local
+
+With the exception of the select command, commands will check in the
+database and decide for themselves which sample or samples to process based on
+the db info and provided options and arguments Processing can be limited to
+samples specified in a sample file, or to samples specified by selection
+options on the command line. When command line selection criteria are specified,
+any sample file information is ignored.
+
+The select, status-update, status-remote, and status-local cmmands operate on
+multiple samples by default. The meta-generate, meta-validate, meta-upload, and
+file-upload commands operate on only one file at a time and, once a file is
+found to operate on, will process that file and then exit. The next time that
+command is called, it won't find the sample it just processed as its state in
+the database has been changed.
+
+Don't confuse local processing status (reported on with status-local and
+remote file availability status (reported on with status-remote). The remote
+status is what is checked by status-update to change the local
+"external_status" database field to "live" in the final processing step.
+
+=cut
+
+=head1 COMMANDS
+
+=head2 Processing steps
+
+=over 3
+
+=item select
+
+=item meta-generate
+
+=item meta-validate
+
+=item meta-upload
+
+=item file-upload
+
+=item status-update
+
+=back
+
+=head2 Query commands
+
+=over 3
+
+=item status-remote
+
+=item status-local
+
+=back
+
+=cut
 
 =head1 OPTIONS
 
-Defaults may be provided by a config file
+Defaults may be provided by a config file.
 
 =head2 Short-Circuit Options.
 
@@ -135,14 +225,6 @@ will be repeated.
 =back
 
 =back
-
-=cut
-
-=head1 DESCRIPTION
-
-This program is used to upload bam files to CgHub, which is a relatively
-complex stepwise process involving tracking progress and errors using a
-database.
 
 =cut
 
