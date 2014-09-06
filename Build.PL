@@ -8,6 +8,7 @@ my $builder = Module::Build->new(
     license             => 'gpl',
     dist_author         => q{Stuart R. Jefferys <srjefferys (at) gmail (dot) com>},
     dist_version_from   => 'lib/Bio/SeqWare/Uploads/CgHub/Bam.pm',
+    recursive_test_files => 1,
     release_status      => 'stable',
     configure_requires => {
         'Module::Build' => 0,

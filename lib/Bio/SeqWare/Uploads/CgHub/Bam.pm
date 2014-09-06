@@ -25,13 +25,13 @@ my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 
 my $COMMAND_DISPATCH_HR = {
     'select'        => \&do_select,
-    'meta-generate' => \&do_metaGenerate,
-    'meta-validate' => \&do_metaValidate,
-    'meta-upload'   => \&do_metaUpload,
-    'file-upload'   => \&do_fileUpload,
-    'status-update' => \&do_statusUpdate,
-    'status-remote' => \&do_statusRemote,
-    'status-local'  => \&do_statusLocal,
+    'meta-generate' => \&do_meta_generate,
+    'meta-validate' => \&do_meta_validate,
+    'meta-upload'   => \&do_meta_upload,
+    'file-upload'   => \&do_file_upload,
+    'status-update' => \&do_status_update,
+    'status-remote' => \&do_status_remote,
+    'status-local'  => \&do_status_local,
 };
 
 =head1 NAME
@@ -336,80 +336,80 @@ sub do_select {
     return 1;
 }
 
-=head2 do_metaGenerate
+=head2 do_meta_generate
 
 Called automatically by runner framework to implement the meta-generate command.
 Not intended to be called directly.
 
 =cut
 
-sub do_metaGenerate {
+sub do_meta_generate {
     return 1;
 }
 
-=head2 do_metaValidate
+=head2 do_meta_validate
 
 Called automatically by runner framework to implement the meta-validate command.
 Not intended to be called directly.
 
 =cut
 
-sub do_metaValidate {
+sub do_meta_validate {
     return 1;
 }
 
-=head2 do_metaUpload
+=head2 do_meta_upload
 
 Called automatically by runner framework to implement the meta-upload command.
 Not intended to be called directly.
 
 =cut
 
-sub do_metaUpload {
+sub do_meta_upload {
     return 1;
 }
 
-=head2 do_fileUpload
+=head2 do_file_upload
 
 Called automatically by runner framework to implement the file_upload command.
 Not intended to be called directly.
 
 =cut
 
-sub do_fileUpload {
+sub do_file_upload {
     return 1;
 }
 
-=head2 do_statusUpdate
+=head2 do_status_update
 
 Called automatically by runner framework to implement the status-update command.
 Not intended to be called directly.
 
 =cut
 
-sub do_statusUpdate {
+sub do_status_update {
     return 1;
 }
 
-=head2 do_statusRemote
+=head2 do_status_remote
 
 Called automatically by runner framework to implement the status-remote command.
 Not intended to be called directly.
 
 =cut
 
-sub do_statusRemote {
+sub do_status_remote {
     return 1;
 }
 
-=head2 do_statusLocal
+=head2 do_status_local
 
 Called automatically by runner framework to implement the status-local command.
 Not intended to be called directly.
 
 =cut
 
-sub do_statusLocal {
+sub do_status_local {
     return 1;
 }
 

@@ -12,7 +12,14 @@ t/manifest.t
 t/pod-coverage.t
 t/pod.t
 t/upload-cghub-bam.t
-t/do-status-local.t
+t/Commands/do-select.t
+t/Commands/do-meta-generate.t
+t/Commands/do-meta-validate.t
+t/Commands/do-meta-upload.t
+t/Commands/do-file-upload.t
+t/Commands/do-status-update.t
+t/Commands/do-status-remote.t
+t/Commands/do-status-local.t
 't/Data/test with space.config'
 TODO.md
 Makefile.PL
