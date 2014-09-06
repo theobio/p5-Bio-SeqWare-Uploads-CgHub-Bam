@@ -4,8 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 11
-;     # Main test module; run this many subtests
+use Test::More 'tests' => 11;     # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
