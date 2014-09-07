@@ -174,6 +174,24 @@ sub init {
     return $self;
 }
 
+=head2 DESTROY()
+
+Called automatically upon destruction of this object. Should close the
+database handle if opened by this class. Only really matters for error
+exits. Planned exists do this manually.
+
+=cut
+
+sub DESTROY {
+    my $self = shift;
+    if ($self->{'dbh'}->{'Active'}) {
+        unless ($self->{'dbh'}->{'AutoCommit'}) {
+            $self->{'dbh'}->rollback();
+        }
+        $self->{'dbh'}->disconnect();
+    }
+}
+
 =head2 parseCli
 
     my $optHR = $obj->parseCli()
@@ -547,7 +565,6 @@ sub getDbh {
     if ($self->{'dbh'}) {
         return $self->{'dbh'};
     }
-
     my $dbh;
     my $connectionBuilder = Bio::SeqWare::Db::Connection->new( $self );
     $dbh = $connectionBuilder->getConnection(

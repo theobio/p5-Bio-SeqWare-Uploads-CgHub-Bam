@@ -4,9 +4,10 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 14;    # Main test module; run this many subtests
+use Test::More 'tests' => 15;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 use Test::MockModule;            # Fake subroutine returns from other modules.
+use DBD::Mock;                   # Fake database results
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
 use File::Spec;              # Generic file handling.
@@ -37,7 +38,8 @@ subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
 subtest( 'parseSampleFile()' => \&testParseSampleFile);
-subtest( 'getDbh()' => \&testGetDbh);
+subtest( 'getDbh()'  => \&testGetDbh);
+subtest( 'DESTROY()' => \&testDESTROY);
 
 sub testNew {
     plan( tests => 2 );
@@ -58,15 +60,44 @@ sub testNew {
     }
 }
 
+sub testDESTROY {
+    plan( tests => 3 );
+    {
+        my $message = "DESTROY dbh closed";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->disconnect();
+        $obj->{'dbh'}->{mock_can_connect} = 0;
+        undef $obj;  # Invokes DESTROY.
+        is( $obj, undef, $message);
+    }
+    {
+        my $message = "DESTROY dbh open";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        undef $obj;  # Invokes DESTROY.
+        is( $obj, undef, $message);
+    }
+    {
+        my $message = "DESTROY dbh open wth transaction";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->begin_work();
+        undef $obj;  # Invokes DESTROY.
+        is( $obj, undef, $message);
+    }
+}
+
 sub testGetDbh {
     plan( tests => 4 );
 
     {
         my $message = "Returns cahced value if any";
         my $obj = makeBam();
-        $obj->{'dbh'} = "DUMMY";
-        my $got = $obj->getDbh();
-        my $want = "DUMMY";
+        $obj->{'dbh'} = makeMockDbh();
+        my $dbh = $obj->getDbh();
+        my $got = blessed $dbh;
+        my $want = "DBI::db";
         is( $got, $want, $message );
     }
 
@@ -82,18 +113,19 @@ sub testGetDbh {
     {
         my $obj = makeBam();
         my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
-        $module->mock( 'getConnection', sub { return "DUMMY" } );
+        $module->mock( 'getConnection', sub { return makeMockDbh() } );
         my $dbh = $obj->getDbh();
         {
              my $message = "Returns new connection when creating one";
-             my $got = $dbh;
-             my $want = "DUMMY";
+             my $got = blessed $dbh;
+             my $want = "DBI::db";
              is( $got, $want, $message );
         }
         {
              my $message = "Caches new connection when creating one";
-             my $got = $obj->{'dbh'};
-             my $want = "DUMMY";
+             my $dbh = $obj->{'dbh'};
+             my $got = blessed $dbh;
+             my $want = "DBI::db";
              is( $got, $want, $message );
         }
     }
@@ -788,4 +820,14 @@ sub makeBam {
     @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
     return $obj;
+}
+
+sub makeMockDbh {
+    my $mockDbh = DBI->connect(
+        'DBI:Mock:',
+        '',
+        '',
+        { 'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1 },
+    );
+    return $mockDbh;
 }
