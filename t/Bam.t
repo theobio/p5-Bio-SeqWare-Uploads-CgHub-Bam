@@ -67,7 +67,8 @@ sub testRun {
 }
 
 sub testParseSampleFile {
-    plan( tests => 10 );
+    plan( tests => 17
+     );
 
     # Sample with bam file and headers
     {
@@ -155,7 +156,79 @@ sub testParseSampleFile {
         }
     }
 
+    {
+        @ARGV = ('status-local');
+        my $obj = $CLASS->new();
+        my $noSuchFile = $CLASS->getUuid();
+        $obj->{'sampleFile'} = $noSuchFile;
+        {
+            my $message = "Exception if can't open file.";
+            my $errorRE = qr/^Can't open sample file for reading: "$noSuchFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badShortHeaderLine.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if fewer heading fields than data fields.";
+            my $errorRE = qr/^More data than headers: line 3 in sample file "$badSampleFile"\. Line was:\n"TCGA1\tUNC1\t6\t\t"\n/m;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badShortDataLine.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if fewer data fields than heading fields.";
+            my $errorRE = qr/^Missing data from line 3 in file "$badSampleFile"\. Line was:\n"TCGA1\tUNC1\t6"\n/;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badIncorrectHeaderLine.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if heading line malformed.";
+            my $errorRE = qr/^Looks like sample file has a bad header line: "$badSampleFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badEmptyHeaderField.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if heading field is blank.";
+            my $errorRE = qr/^Sample file header can not have empty fields: "$badSampleFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badDuplicatedHeaderField.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if heading field is duplicated.";
+            my $errorRE = qr/^Duplicate headings not allowed: "barcode" in sample file "$badSampleFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badNoHeaderWithExtraData.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if no header and other than four data columns.";
+            my $errorRE = qr/^More data than headers: line 2 in sample file "$badSampleFile"\. Line was:\n"TCGA1\tUNC1\t6\t\t"\n/m;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
 }
+
 sub testLoadOptions {
     plan( tests => 11 );
 

@@ -14,6 +14,7 @@ use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
 use File::Spec::Functions qw(catfile);  # Generic file handling.
 use IO::File ;     # File io using variables as fileHandles.
+                   # Note: no errors on open failure.
 
 # Cpan modules
 use File::HomeDir qw(home);             # Finding the home directory is hard.
@@ -268,13 +269,9 @@ sub parseSampleFile {
 
     my $self = shift;
 
-    my $inFH;
-    eval {
-        $inFH = IO::File->new("< $self->{'sampleFile'}");
-    };
-    my $error = $@;
-    if ($error || ! $inFH) {
-        croak( "Can't open sample file for reading: \"$self->{'sampleFile'}\".\n$error");
+    my $inFH = IO::File->new("< $self->{'sampleFile'}");
+    if (! $inFH) {
+        croak( "Can't open sample file for reading: \"$self->{'sampleFile'}\".\n$!\n");
     }
 
     my @rows;
@@ -296,24 +293,34 @@ sub parseSampleFile {
             # Handle first real line is header
             if ($line =~ /^sample\tflowcell\tlane\tbarcode.*/) {
                 @headings = @fields;
+                my %dupHeaderCheck;
                 for my $fieldName (@headings) {
                     if (length $fieldName < 1 ) {
-                        croak "Sample file header can not have empty fields: $self->{'sampleFile'}.\n";
+                        croak "Sample file header can not have empty fields: \"$self->{'sampleFile'}\".\n";
+                    }
+                    if (exists $dupHeaderCheck{"$fieldName"}) {
+                        croak "Duplicate headings not allowed: \"$fieldName\" in sample file \"$self->{'sampleFile'}\".\n" 
+                    }
+                    else {
+                        $dupHeaderCheck{"$fieldName"} = 1;
                     }
                  }
                  next;
             }
             # Handle first real line is defective header
             elsif ($line =~ /.*sample.*flowcell.*/) {
-                croak "Looks like sample file has a bad header line: $self->{'sampleFile'}";
+                croak "Looks like sample file has a bad header line: \"$self->{'sampleFile'}\".\n";
             }
             # Drop through to handle first line is data line.
         }
 
         # Handle data line.
 
-        if (scalar @fields != scalar @headings ) {
-            croak "File seems to be missing data from line $lineNum: \n$line\n";
+        if (scalar @fields < scalar @headings ) {
+            croak "Missing data from line $lineNum in file \"$self->{'sampleFile'}\". Line was:\n\"$line\"\n";
+        }
+        if (scalar @fields > scalar @headings ) {
+            croak "More data than headers: line $lineNum in sample file \"$self->{'sampleFile'}\". Line was:\n\"$line\"\n";
         }
         my $lineHR;
         for( my $col = 0; $col < scalar @fields; $col++) {
