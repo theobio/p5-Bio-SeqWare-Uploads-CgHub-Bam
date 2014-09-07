@@ -1,7 +1,10 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
 0.000.002 - Tag files for upload
- [ADD] - Add database connect ability.
+ [ADD] - Add CLI argument extraction.
+ [MAJOR] - Add command processing framework.
+ [ADD] - Sample file input added (as argument).
+ [API] - Add class function getUuid(), drop object function, makeUuid().
 
 0.000.001 - App Framework
  [MAJOR] - Initial package skeleton.

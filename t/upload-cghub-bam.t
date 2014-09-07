@@ -26,7 +26,7 @@ my $APP = 'upload-cghub-bam';
 
 # Application runs (smoke test)
 {
-   run_ok( $APP, [], "Minimal run succeeds");
+   run_ok( $APP, ['status-local'], "Minimal run succeeds");
 }
 
 # Testing exit run with --version option
@@ -41,7 +41,7 @@ my $APP = 'upload-cghub-bam';
 
 # Testing output help message when using bad option.
 {
-    my @appArgs = qw(--noSuchOptError);
+    my @appArgs = qw(--noSuchOptError status-local);
     my $appOut;
     my $appErr;
     run_script( $APP, \@appArgs, \$appOut, \$appErr );

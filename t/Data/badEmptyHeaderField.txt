@@ -1,0 +1,8 @@
+# Comment lines are ignored
+sample	flowcell	lane	barcode	
+TCGA1	UNC1	6		
+TCGA2	UNC2	7	ATTCGG	
+
+# Blank lines are ignored too.
+TCGA3	UNC3	8	ATTCGG	/not/really
+TCGA4	UNC4	1		/old/fake

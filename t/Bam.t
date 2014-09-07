@@ -4,8 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 11
-;     # Main test module; run this many subtests
+use Test::More 'tests' => 13;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
@@ -17,24 +16,29 @@ use Bio::SeqWare::Config;    # To get default config file name
 use Bio::SeqWare::Uploads::CgHub::Bam;
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 my $TEST_CFG = File::Spec->catfile( "t", "Data", "test with space.config" );
+my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
+my $SAMPLE_FILE = File::Spec->catfile( "t", "Data", "sampleList.txt" );
 
 # Run these tests
 subtest( 'new()'      => \&testNew );
 subtest( 'run()'      => \&testRun );
 subtest( 'parseCli()'    => \&testParseCli    );
-subtest( 'loadOptions()' => \&testLoadOptions );
+subtest( 'loadOptions()'   => \&testLoadOptions );
+
+subtest( 'loadArguments()' => \&testLoadArguments );
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
 subtest( 'say(),sayDebug(),SayVerbose()' => \&testSayAndSayDebugAndSayVerbose );
-subtest( 'makeUuid()'     => \&testMakeUuid    );
+subtest( 'getUuid()'     => \&testGetUuid    );
 subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
-
+subtest( 'parseSampleFile()' => \&testParseSampleFile);
 
 sub testNew {
     plan( tests => 2 );
 
+    @ARGV = ('status-local');
     my $obj = $CLASS->new();
     {
         my $message = "Returns object of correct type";
@@ -62,11 +66,175 @@ sub testRun {
     }
 }
 
+sub testParseSampleFile {
+    plan( tests => 17
+     );
+
+    # Sample with bam file and headers
+    {
+        @ARGV = ('status-local', "$SAMPLE_FILE_BAM");
+        my $obj = $CLASS->new();
+        my $sampleRecDAT = $obj->parseSampleFile();
+        my $wantDAT = [
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '', bamFile => '' },
+            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG', bamFile => '' },
+            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG', bamFile => '/not/really' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '', bamFile => '/old/fake' },
+        ];
+        {
+            my $message = "Sample count correct";
+            my $got = scalar @$sampleRecDAT;
+            my $want = scalar @$wantDAT;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 1 (no barcode)";
+            my $got = $sampleRecDAT->[0];
+            my $want = $wantDAT->[0];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 2 ( with barcode)";
+            my $got = $sampleRecDAT->[1];
+            my $want = $wantDAT->[1];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 3 (barcode + bamFile)";
+            my $got = $sampleRecDAT->[2];
+            my $want = $wantDAT->[2];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 4 (no barcode + bamFile)";
+            my $got = $sampleRecDAT->[3];
+            my $want = $wantDAT->[3];
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+    # Samples no header, no extra info
+    {
+        @ARGV = ('status-local', "$SAMPLE_FILE");
+        my $obj = $CLASS->new();
+        my $sampleRecDAT = $obj->parseSampleFile();
+        my $wantDAT = [
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '' },
+            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG' },
+            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '' },
+        ];
+        {
+            my $message = "Sample count correct";
+            my $got = scalar @$sampleRecDAT;
+            my $want = scalar @$wantDAT;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 1 (no barcode)";
+            my $got = $sampleRecDAT->[0];
+            my $want = $wantDAT->[0];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 2 ( with barcode)";
+            my $got = $sampleRecDAT->[1];
+            my $want = $wantDAT->[1];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 3 (barcode )";
+            my $got = $sampleRecDAT->[2];
+            my $want = $wantDAT->[2];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 4 (no barcode)";
+            my $got = $sampleRecDAT->[3];
+            my $want = $wantDAT->[3];
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+    {
+        @ARGV = ('status-local');
+        my $obj = $CLASS->new();
+        my $noSuchFile = $CLASS->getUuid();
+        $obj->{'sampleFile'} = $noSuchFile;
+        {
+            my $message = "Exception if can't open file.";
+            my $errorRE = qr/^Can't open sample file for reading: "$noSuchFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badShortHeaderLine.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if fewer heading fields than data fields.";
+            my $errorRE = qr/^More data than headers: line 3 in sample file "$badSampleFile"\. Line was:\n"TCGA1\tUNC1\t6\t\t"\n/m;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badShortDataLine.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if fewer data fields than heading fields.";
+            my $errorRE = qr/^Missing data from line 3 in file "$badSampleFile"\. Line was:\n"TCGA1\tUNC1\t6"\n/;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badIncorrectHeaderLine.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if heading line malformed.";
+            my $errorRE = qr/^Looks like sample file has a bad header line: "$badSampleFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badEmptyHeaderField.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if heading field is blank.";
+            my $errorRE = qr/^Sample file header can not have empty fields: "$badSampleFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badDuplicatedHeaderField.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if heading field is duplicated.";
+            my $errorRE = qr/^Duplicate headings not allowed: "barcode" in sample file "$badSampleFile"\./;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+    {
+        my $badSampleFile = File::Spec->catfile( "t", "Data", "badNoHeaderWithExtraData.txt" );
+        @ARGV = ('status-local', $badSampleFile);
+        my $obj = $CLASS->new();
+        {
+            my $message = "Exception if no header and other than four data columns.";
+            my $errorRE = qr/^More data than headers: line 2 in sample file "$badSampleFile"\. Line was:\n"TCGA1\tUNC1\t6\t\t"\n/m;
+            throws_ok( sub { $obj->parseSampleFile(); }, $errorRE, $message );
+        }
+    }
+}
+
 sub testLoadOptions {
-    plan( tests => 10 );
+    plan( tests => 11 );
 
     # --verbose only
     {
+        @ARGV = qw(--verbose status-local);
         my $obj = $CLASS->new();
         my $optHR = {'verbose' => 1};
         $obj->loadOptions($optHR);
@@ -77,6 +245,7 @@ sub testLoadOptions {
     }
     # --debug only
     {
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $optHR = {'debug' => 1};
         $obj->loadOptions($optHR);
@@ -87,6 +256,7 @@ sub testLoadOptions {
     }
     # --verbose && --debug
     {
+        @ARGV = qw(--debug --verbose status-local);
         my $obj = $CLASS->new();
         my $optHR = {'verbose' => 1, 'debug' => 1};
         $obj->loadOptions($optHR);
@@ -98,12 +268,14 @@ sub testLoadOptions {
 
     # --log
     {
+        @ARGV = qw(--log status-local);
         my $obj = $CLASS->new();
         my $optHR = { 'log' => 1 };
         $obj->loadOptions($optHR);
         ok($obj->{'_optHR'}->{'log'}, "log set if needed.");
     }
     {
+        @ARGV = qw(status-local);
         my $obj = $CLASS->new();
         $obj->loadOptions({});
         ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
@@ -111,35 +283,103 @@ sub testLoadOptions {
 
     # _argvAR
     {
-        @ARGV = qw(--verbose --debug);
+        @ARGV = qw(--verbose --debug status-local);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
-        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug'], "ARGV was captured.");
+        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug', 'status-local'], "ARGV was captured.");
     }
+
     # _optHR
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
         ok($obj->{'_optHR'}->{'debug'}, "optHR was captured.");
     }
 
+    {
+        my $message = "_argumentsAR loaded into object.";
+        @ARGV = qw(--verbose status-local);
+        my $obj = $CLASS->new();
+        # loadOptions called to do this...
+        is_deeply($obj->{'_argumentsAR'}, ['status-local'], $message);
+    }
+}
+
+sub testLoadArguments {
+    plan( tests => 8 );
+
+    @ARGV = ("status-local");
+    my $obj = $CLASS->new();
+    {
+        my $command = "status-local";
+        $obj->loadArguments([$command]);
+        {
+            my $message = "1 arg = command";
+            my $got = $obj->{'command'};
+            my $want = $command;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "1 arg = no sample file";
+            ok( ! $obj->{'sampleFile'}, $message);
+        }
+    }
+    {
+        my $command = "status-local";
+        $obj->loadArguments([$command, $SAMPLE_FILE]);
+        {
+            my $message = "2 args: 1st = command";
+            my $got = $obj->{'command'};
+            my $want = $command;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "2 args: 2nd = sampleFile";
+            my $got = $obj->{'sampleFile'};
+            my $want = $SAMPLE_FILE;
+            is( $got, $want, $message );
+        }
+    }
+    {
+        my $message = "error if no command specified";
+        my $errorRE = qr/^Must specify a command\. Try --help\.\n/;
+        throws_ok( sub { $obj->loadArguments([]); }, $errorRE, $message );
+    }
+    {
+        my $message = "error if unknown command specified";
+        my $command = "bad-command-oops";
+        my $errorRE = qr/I don't know the command 'bad-command-oops'\. Try --help\.\n/;
+        throws_ok( sub { $obj->loadArguments(['bad-command-oops']); }, $errorRE, $message );
+    }
+    {
+        my $message = "error if 2nd argument is not an existing sample file";
+        my $noSuchFile = $CLASS->getUuid();
+        my $errorRE = qr/I can't find the sample file '$noSuchFile'\.\n/;
+        throws_ok( sub { $obj->loadArguments(['status-local', $noSuchFile]); }, $errorRE, $message );
+    }
+    {
+        my $message = "error if more than 2 arguments";
+        my $command = "status-local";
+        my $errorRE = qr/Too many arguments for cammand '$command'. Try --help.\n/;
+        throws_ok( sub { $obj->loadArguments([$command, $SAMPLE_FILE, 'foo']); }, $errorRE, $message );
+    }
 }
 
 sub testParseCli {
-    plan( tests => 8 );
+    plan( tests => 9 );
     my $obj = $CLASS->new();
 
     # --verbose
     {
          my $message = "--verbose flag default is unset";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          ok( ! $opt->{'verbose'}, $message );
     }
     {
          my $message = "--verbose flag can be set";
-         @ARGV = qw(--verbose);
+         @ARGV = qw(--verbose status-local);
          my $opt = $obj->parseCli();
          ok( $opt->{'verbose'}, $message );
     }
@@ -147,13 +387,13 @@ sub testParseCli {
     # --debug
     {
          my $message = "--debug flag default is unset";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          ok( ! $opt->{'debug'}, $message );
     }
     {
          my $message = "--debug flag can be set";
-         @ARGV = qw(--debug);
+         @ARGV = qw(--debug status-local);
          my $opt = $obj->parseCli();
          ok( $opt->{'debug'}, $message );
     }
@@ -161,13 +401,13 @@ sub testParseCli {
     # --log
     {
          my $message = "--log flag default is unset";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          ok( ! $opt->{'log'}, $message );
     }
     {
          my $message = "--log flag can be set";
-         @ARGV = qw(--log);
+         @ARGV = qw(--log status-local);
          my $opt = $obj->parseCli();
          ok( $opt->{'log'}, $message );
     }
@@ -175,25 +415,35 @@ sub testParseCli {
     # --config
     {
          my $message = "--config default is set";
-         @ARGV = qw();
+         @ARGV = qw(status-local);
          my $opt = $obj->parseCli();
          is( $opt->{'config'}, Bio::SeqWare::Config->getDefaultFile(), $message );
     }
     {
          my $message = "--config flag can be set";
-         @ARGV = qw(--config some/new.cfg);
+         @ARGV = qw(--config some/new.cfg status-local);
          my $opt = $obj->parseCli();
          is( $opt->{'config'}, "some/new.cfg", $message );
     }
 
+    {
+        my $message = "key \"argumentsAR\" contains arguments";
+        @ARGV = qw(--verbose --debug status-local);
+        my $opt = $obj->parseCli();
+        is_deeply( $opt->{'argumentsAR'}, ['status-local'], $message );
+    }
+
+    # argumentsAR works if mixed, and with "--"
+    # Add test later.
 }
 
 sub testSayAndSayDebugAndSayVerbose {
+ 
     plan( tests => 21 );
 
     # --debug set
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
         my $expectRE = qr/^$text$/;
@@ -206,7 +456,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --verbose set
     {
-        @ARGV = qw(--verbose);
+        @ARGV = qw(--verbose status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with verbose on';
         my $expectRE = qr/^$text$/;
@@ -219,7 +469,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --no flag set
     {
-        @ARGV = qw();
+        @ARGV = qw(status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with no flag';
         my $expectRE = qr/^$text$/;
@@ -233,7 +483,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is string.
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with scalar object.';
         my $object = 'The second object';
@@ -247,7 +497,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is hashRef.
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with hashRef object.';
         my $object = {'key'=>'value'};
@@ -262,7 +512,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is arrayRef.
     {
-        @ARGV = qw(--debug);
+        @ARGV = qw(--debug status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with arrayRef object.';
         my $object = ['key', 'value'];
@@ -277,7 +527,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --debug and --log set
     {
-        @ARGV = qw(--debug --log);
+        @ARGV = qw(--debug --log status-local);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
         my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
@@ -298,6 +548,7 @@ sub testSayAndSayDebugAndSayVerbose {
 sub testFixupTildePath {
     plan( tests => 5 );
 
+    @ARGV = qw(status-local);
     my $obj = $CLASS->new();
     my $home = home();
     is( $obj->fixupTildePath( "a/path/" ), "a/path/", "path without tilde" );
@@ -312,7 +563,7 @@ sub testGetConfigOptions {
 
     # Testing with default config file
     {
-        @ARGV = qw();
+        @ARGV = qw(status-local);
         my $obj = $CLASS->new();
 
         my $defaultConfig = Bio::SeqWare::Config->getDefaultFile();
@@ -328,7 +579,7 @@ sub testGetConfigOptions {
         }
         {
             my $message = "Dies with bad filename";
-            my $badFileName = $obj->makeUuid() . ".notAnExistingFile";
+            my $badFileName = $CLASS->getUuid() . ".notAnExistingFile";
             my $expectError = qr/^Can't find config file: "$badFileName"\./;
             throws_ok( sub { $obj->getConfigOptions($badFileName) }, $expectError, $message);
         }
@@ -342,7 +593,7 @@ sub testGetConfigOptions {
 
     # Testing with test config file
     {
-        @ARGV = ('--config', "$TEST_CFG");
+        @ARGV = ('--config', "$TEST_CFG", 'status-local');
         my $obj = $CLASS->new();
         {
             my $message = "Test config options available";
@@ -354,14 +605,11 @@ sub testGetConfigOptions {
     }
 }
 
-sub testMakeUuid {
+sub testGetUuid {
     plan( tests => 3);
 
-    @ARGV = qw();
-    my $obj = $CLASS->new();
-
-    my $uuid = $obj->makeUuid();
-    my $uuid2 = $obj->makeUuid();
+    my $uuid = $CLASS->getUuid();
+    my $uuid2 = $CLASS->getUuid();
     like( $uuid, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "uuid generated as string");
     like( $uuid2, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "another uuid generated as string");
     isnt( $uuid, $uuid2, "two successive uuids are not the same");
@@ -388,7 +636,7 @@ sub testGetTimestamp {
 sub testGetLogPrefix {
     plan( tests => 1);
 
-     @ARGV = qw();
+     @ARGV = qw(status-local);
     my $obj = $CLASS->new();
 
     my $message = "Log prefix is formatted correctly";
@@ -404,7 +652,7 @@ sub testGetLogPrefix {
 sub testLogifyMessage {
     plan( tests => 4 );
 
-    @ARGV = qw();
+    @ARGV = qw(status-local);
     my $obj = $CLASS->new();
     my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
     my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';

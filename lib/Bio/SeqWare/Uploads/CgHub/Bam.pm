@@ -13,6 +13,8 @@ use Sys::Hostname; # Get the hostname for logging
 use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
 use File::Spec::Functions qw(catfile);  # Generic file handling.
+use IO::File ;     # File io using variables as fileHandles.
+                   # Note: no errors on open failure.
 
 # Cpan modules
 use File::HomeDir qw(home);             # Finding the home directory is hard.
@@ -21,8 +23,18 @@ use Data::GUID;                         # Unique uuids.
 # GitHub only modules
 use Bio::SeqWare::Config;   # Config file parsing.
 
-my
- $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
+my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
+
+my $COMMAND_DISPATCH_HR = {
+    'select'        => \&do_select,
+    'meta-generate' => \&do_meta_generate,
+    'meta-validate' => \&do_meta_validate,
+    'meta-upload'   => \&do_meta_upload,
+    'file-upload'   => \&do_file_upload,
+    'status-update' => \&do_status_update,
+    'status-remote' => \&do_status_remote,
+    'status-local'  => \&do_status_local,
+};
 
 =head1 NAME
 
@@ -91,6 +103,20 @@ sub getTimestamp {
                      $yr+1900, $mon+1, $day, $hr, $min, $sec);
 }
 
+=head2 getUuid
+
+    my $uuid = $self->getUuid();
+
+Creates and returns a new unique string form uuid like
+"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
+
+=cut
+
+sub getUuid {
+    my $class = shift;
+    return Data::GUID->new()->as_string();
+}
+
 =head1 INSTANCE METHODS
 
 =cut
@@ -106,10 +132,14 @@ returns 1 if succeds, or dies with an error message.
 
 sub run {
     my $self = shift;
+
+    $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
     return 1;
 }
 
 =head1 INTERNAL METHODS
+
+=cut
 
 =head2 init()
 
@@ -127,12 +157,13 @@ Returns the fully initialized application object ready for running.
 sub init {
     my $self = shift;
 
-    $self->{'id'} = $self->makeUuid();
+    $self->{'id'} = $CLASS->getUuid();
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
     my %opt = ( %$configOptionsHR, %$cliOptionsHR );
     $self->loadOptions( \%opt );
+    $self->loadArguments( $opt{'argumentsAR'} );
 
     # Retrspectve logging (as logging being configured above.)
     $self->sayDebug("Loading config file:", $configFile);
@@ -148,10 +179,30 @@ sub init {
 
 Parses the options and arguments from the command line into a hashref with the
 option name as the key. Parsing is done with GetOpt::Long. Some options are
-"short-circuit" options, if given all other options are ignored (i.e. --version
-or --help). If an unknown option is provided on the command line, this will
-exit with a usage message. For options see the OPTIONS section in
-upload-cghub-bam.
+"short-circuit" options (i.e. --version or --help). When encountered all
+following options and argments will be ignored. Once all options are removed
+from the command line, what remains are arguments. The presence of an unknown
+option is an error. A stand-alone "--" prevents parsing anything following as
+options, they will be used as arguments. This allows, for example, a filename
+argument like "--config", however confusing that might be...
+
+For a list of options see the OPTIONS section in upload-cghub-bam.
+
+If no short circuit options and no parsing errors occur, will return a hash-ref
+of all options, those not found having a value of undefined (including boolean
+flags). In addition the following keys are present
+
+=over 3
+
+=item "_argvAR"
+
+The original command line options and arguments, as an array ref.
+
+=item "_argumentsAR"
+
+The arguments left after parsing options out of the command line, as an array ref.
+
+=back
 
 =cut
 
@@ -189,7 +240,97 @@ sub parseCli {
 
     ) or pod2usage( { -verbose => 0, -exitval => 2 });
 
+    my @arguments = @ARGV;
+
+    $opt{'argumentsAR'} = \@arguments;
+
     return \%opt;
+}
+
+=head2 parseSampleFile 
+
+    my sampleDataRecords = $self->parseSampleFile()
+
+Read a tab delimited sample file and for each non-comment, non-blank,
+non header line, include a record of data in the returned array (ref) of
+samples. Each line in order will be represented by a hash (ref) with the keys
+'sample', 'flowcell', 'lane', and 'barcode'. If additional columns are present
+in the file, a header line is required.
+
+If a header is provided it must start with sample\tflowcell\tlane\tbarcode
+This way, each record will have an entry for each column, keyed by column name.
+
+If the first line in a file looks like a header (i.e it contains the text
+'sample' and 'flowcell' in that order, than it MUST be a real header line.
+
+=cut
+
+sub parseSampleFile {
+
+    my $self = shift;
+
+    my $inFH = IO::File->new("< $self->{'sampleFile'}");
+    if (! $inFH) {
+        croak( "Can't open sample file for reading: \"$self->{'sampleFile'}\".\n$!\n");
+    }
+
+    my @rows;
+    my $lineNum = 0;
+    my $isFirstLine = 1;
+    my $fieldDelim = qr/[ ]*\t[ ]*/;
+    my @headings = qw( sample flowcell lane barcode );
+
+    while ( my $line = <$inFH> ) {
+        ++$lineNum;
+        chomp $line;
+        next if ( $line =~ /^\s*$/ );  # Blank line
+        next if ( $line =~ /^\s*#/ );  # Comment line
+
+        my @fields = split( $fieldDelim, $line, -1);
+        if ($isFirstLine) {
+            $isFirstLine = 0;
+
+            # Handle first real line is header
+            if ($line =~ /^sample\tflowcell\tlane\tbarcode.*/) {
+                @headings = @fields;
+                my %dupHeaderCheck;
+                for my $fieldName (@headings) {
+                    if (length $fieldName < 1 ) {
+                        croak "Sample file header can not have empty fields: \"$self->{'sampleFile'}\".\n";
+                    }
+                    if (exists $dupHeaderCheck{"$fieldName"}) {
+                        croak "Duplicate headings not allowed: \"$fieldName\" in sample file \"$self->{'sampleFile'}\".\n" 
+                    }
+                    else {
+                        $dupHeaderCheck{"$fieldName"} = 1;
+                    }
+                 }
+                 next;
+            }
+            # Handle first real line is defective header
+            elsif ($line =~ /.*sample.*flowcell.*/) {
+                croak "Looks like sample file has a bad header line: \"$self->{'sampleFile'}\".\n";
+            }
+            # Drop through to handle first line is data line.
+        }
+
+        # Handle data line.
+
+        if (scalar @fields < scalar @headings ) {
+            croak "Missing data from line $lineNum in file \"$self->{'sampleFile'}\". Line was:\n\"$line\"\n";
+        }
+        if (scalar @fields > scalar @headings ) {
+            croak "More data than headers: line $lineNum in sample file \"$self->{'sampleFile'}\". Line was:\n\"$line\"\n";
+        }
+        my $lineHR;
+        for( my $col = 0; $col < scalar @fields; $col++) {
+            $lineHR->{"$headings[$col]"} = $fields[$col];
+        }
+        push @rows, $lineHR;
+
+    } # Iterate over every line in $self->{'sampleFile'}.
+
+    return \@rows;
 }
 
 =head2 getConfigOptions
@@ -222,6 +363,158 @@ sub getConfigOptions {
     return $configParser->getAll();
 }
 
+=head2 loadOptions
+
+   $self->loadOptions({ key => value, ... });
+
+Valdates and loads the provided key => value settings into the object.
+Returns nothing on success. As this does validation, it can die with lots of
+different messages. It also does cross-validation and fills in implicit options, i.e. it sets
+--verbose if --debug was set.
+
+=cut
+
+sub loadOptions {
+    my $self = shift;
+    my $optHR = shift;
+
+    if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
+    if ($optHR->{'debug'}  ) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
+    if ($optHR->{'log'}    ) { $self->{'log'}     = 1; }
+
+    $self->{'_optHR'} = $optHR;
+    $self->{'_argvAR'} = $optHR->{'argvAR'};
+    $self->{'_argumentsAR'} = $optHR->{'argumentsAR'};
+
+}
+
+=head2 loadArguments
+
+   $self->loadArguments(["arg1", "arg2"]);
+
+Valdates and loads the CLI arguments (What is left over after removing options
+up to and including a lone "--"). Returns nothing on success. As this does
+validation, it can die with lots of different messages.
+
+=cut
+
+sub loadArguments {
+    my $self = shift;
+    my $argumentsAR = shift;
+    my @arguments = @{$argumentsAR};
+
+    my $command = shift @arguments;
+    unless( defined $command ) {
+        croak "Must specify a command. Try --help.\n";
+    }
+    unless(exists $COMMAND_DISPATCH_HR->{"$command"}) {
+        croak "I don't know the command '$command'. Try --help.\n";
+    }
+    $self->{'command'} = $command;
+
+    my $sampleFile = shift @arguments;
+    if (defined $sampleFile) {
+        unless( -f $sampleFile ) {
+            croak "I can't find the sample file '$sampleFile'.\n";
+        }
+    }
+    $self->{'sampleFile'} = $sampleFile;   # May be undefined
+
+    if (@arguments) {
+        croak "Too many arguments for cammand '$command'. Try --help.\n";
+    }
+
+    return 1;
+}
+
+=head2 do_select
+
+Called automatically by runner framework to implement the select command.
+Not intended to be called directly.
+
+=cut
+
+sub do_select {
+    return 1;
+}
+
+=head2 do_meta_generate
+
+Called automatically by runner framework to implement the meta-generate command.
+Not intended to be called directly.
+
+=cut
+
+sub do_meta_generate {
+    return 1;
+}
+
+=head2 do_meta_validate
+
+Called automatically by runner framework to implement the meta-validate command.
+Not intended to be called directly.
+
+=cut
+
+sub do_meta_validate {
+    return 1;
+}
+
+=head2 do_meta_upload
+
+Called automatically by runner framework to implement the meta-upload command.
+Not intended to be called directly.
+
+=cut
+
+sub do_meta_upload {
+    return 1;
+}
+
+=head2 do_file_upload
+
+Called automatically by runner framework to implement the file_upload command.
+Not intended to be called directly.
+
+=cut
+
+sub do_file_upload {
+    return 1;
+}
+
+=head2 do_status_update
+
+Called automatically by runner framework to implement the status-update command.
+Not intended to be called directly.
+
+=cut
+
+sub do_status_update {
+    return 1;
+}
+
+=head2 do_status_remote
+
+Called automatically by runner framework to implement the status-remote command.
+Not intended to be called directly.
+
+=cut
+
+sub do_status_remote {
+    return 1;
+}
+
+=head2 do_status_local
+
+Called automatically by runner framework to implement the status-local command.
+Not intended to be called directly.
+
+=cut
+
+sub do_status_local {
+    return 1;
+}
+
 =head2 fixupTildePath
 
     my $path = $self->fixupTildePath( $filePath );
@@ -245,30 +538,6 @@ sub fixupTildePath {
     my $home = home();
     $path =~ s/^~/$home/;
     return $path;
-}
-
-=head2 loadOptions
-
-   $self->loadOptions({ key => value, ... });
-
-Valdates and loads the provided key => value settings into the object.
-Returns nothing on success. As this does validation, it can die with lots of
-different messages. It also does cross-validation and fills in implicit options, i.e. it sets
---verbose if --debug was set.
-
-=cut
-
-sub loadOptions {
-    my $self = shift;
-    my $optHR = shift;
-
-    if ($optHR->{'verbose'}) { $self->{'verbose'} = 1; }
-    if ($optHR->{'debug'}  ) { $self->{'verbose'} = 1; $self->{'debug'} = 1; }
-    if ($optHR->{'log'}    ) { $self->{'log'}     = 1; }
-
-    $self->{'_optHR'} = $optHR;
-    $self->{'_argvAR'} = $optHR->{'argvAR'}
-
 }
 
 =head2 getLogPrefix
@@ -442,21 +711,6 @@ sub say {
     }
     print $message;
 }
-
-=head2 makeUuid
-
-    my $uuid = $self->makeUuid();
-
-Creates and returns a new unique string form uuid like
-"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
-
-=cut
-
-sub makeUuid {
-    my $self = shift;
-    return Data::GUID->new()->as_string();
-}
-
 
 =head1 AUTHOR
 
