@@ -21,7 +21,8 @@ use File::HomeDir qw(home);             # Finding the home directory is hard.
 use Data::GUID;                         # Unique uuids.
 
 # GitHub only modules
-use Bio::SeqWare::Config;   # Config file parsing.
+use Bio::SeqWare::Config;          # Config file parsing.
+use Bio::SeqWare::Db::Connection;  # Database handle generation
 
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 
@@ -132,7 +133,6 @@ returns 1 if succeds, or dies with an error message.
 
 sub run {
     my $self = shift;
-
     $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
     return 1;
 }
@@ -158,6 +158,7 @@ sub init {
     my $self = shift;
 
     $self->{'id'} = $CLASS->getUuid();
+    $self->{'dbh'} = undef; 
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
@@ -220,6 +221,12 @@ sub parseCli {
 
     # Override local/config options with command line options
     GetOptions(
+
+        # Db connection options
+        'dbUser=s'     => \$opt{'dbUser'},
+        'dbPassword=s' => \$opt{'dbPassword'},
+        'dbHost=s'     => \$opt{'dbHost'},
+        'dbSchema=s'   => \$opt{'dbSchema'},
 
         # Input options.
         'config=s'   => \$opt{'config'},
@@ -386,6 +393,15 @@ sub loadOptions {
     $self->{'_argvAR'} = $optHR->{'argvAR'};
     $self->{'_argumentsAR'} = $optHR->{'argumentsAR'};
 
+    unless ( $optHR->{'dbUser'}    ) { croak("--dbUser option required."    ); };
+    unless ( $optHR->{'dbPassword'}) { croak("--dbPassword option required."); };
+    unless ( $optHR->{'dbHost'}    ) { croak("--dbHost option required."    ); };
+    unless ( $optHR->{'dbSchema'}  ) { croak("--dbSchema option required."  ); };
+
+    $self->{'dbUser'}     = $optHR->{'dbUser'};
+    $self->{'dbPassword'} = $optHR->{'dbPassword'};
+    $self->{'dbHost'}     = $optHR->{'dbHost'};
+    $self->{'dbSchema'}   = $optHR->{'dbSchema'};
 }
 
 =head2 loadArguments
@@ -513,6 +529,33 @@ Not intended to be called directly.
 
 sub do_status_local {
     return 1;
+}
+
+=head2 getDbh
+
+  my $dbh = $self->getDbh();
+
+Returns a cached database handle, or creates a new one if nothing is cached.
+Creating requires appropriate parameters are set.
+
+=cut
+
+sub getDbh {
+    my $self = shift;
+
+    if ($self->{'dbh'}) {
+        return $self->{'dbh'};
+    }
+
+    my $dbh;
+    my $connectionBuilder = Bio::SeqWare::Db::Connection->new( $self );
+    $dbh = $connectionBuilder->getConnection(
+         {'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1}
+    );
+    if (! defined $dbh) {
+        croak "DbConnectException: Failed to connect to the database.\n";
+    }
+    return $dbh;
 }
 
 =head2 fixupTildePath

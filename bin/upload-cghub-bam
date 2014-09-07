@@ -32,6 +32,11 @@ $app->run();
   upload-cghub-bam [options] command [arguments]
 
   [options]:
+    --dbUser      Database login user
+    --dbPassword  Database login password
+    --dbHost      Database login at this host name/address
+    --dbSchema    Database to connect to upon login
+
     --version  Print the version
     --help     Extended option descriptions
 
@@ -151,6 +156,33 @@ if specified in a config file
 
 If specifed, a help message will be printed. Complete documentation is
 provided via perldoc upload-cghub-bam. Ignored if specified in a config file
+
+=back
+
+=head2 Database connection options
+
+These are usually provided by the config file, but comman line options will
+override the config file options.
+
+=over 3
+
+=item dbUser
+
+The user name used to connect to the database.
+
+=item dbPassword
+
+The password used to connect to the databse. If provvided in the config file
+the config file should be readable only by the user.
+
+=item dbHost
+
+The machine hosting the database being conneted to.
+
+=item dbSchema
+
+The database to connect to. Most databases can host many different databases
+simultaneously; you have to pick the correct one.
 
 =back
 
