@@ -22,6 +22,13 @@ t/Commands/do-status-remote.t
 t/Commands/do-status-local.t
 't/Data/test with space.config'
 't/Data/samplesToUpload.txt'
+'t/Data/badDuplicatedHeaderField.txt'
+'t/Data/badEmptyHeaderField.txt'
+'t/Data/badIncorrectHeaderLine.txt'
+'t/Data/badNoHeaderWithExtraData.txt'
+'t/Data/badShortDataLine.txt'
+'t/Data/badShortHeaderLine.txt'
+'t/Data/sampleList.txt'
 TODO.md
 Makefile.PL
 META.yml
