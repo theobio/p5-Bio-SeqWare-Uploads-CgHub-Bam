@@ -16,6 +16,7 @@ my $builder = Module::Build->new(
     build_requires => {
         'Test::Exception' => 0,
         'Test::Output'    => 0,
+        'Mock::Module'    => 0,
     },
     requires => {
         'perl'          => '5.014',

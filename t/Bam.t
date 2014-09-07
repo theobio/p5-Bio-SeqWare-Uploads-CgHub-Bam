@@ -4,13 +4,15 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 13;    # Main test module; run this many subtests
+use Test::More 'tests' => 14;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
+use Test::MockModule;            # Fake subroutine returns from other modules.
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
 use File::Spec;              # Generic file handling.
 
-use Bio::SeqWare::Config;    # To get default config file name
+use Bio::SeqWare::Config;          # To get default config file name
+use Bio::SeqWare::Db::Connection;  # Database handle generation, for mocking
 
 # This class tests ...
 use Bio::SeqWare::Uploads::CgHub::Bam;
@@ -35,6 +37,7 @@ subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
 subtest( 'parseSampleFile()' => \&testParseSampleFile);
+subtest( 'getDbh()' => \&testGetDbh);
 
 sub testNew {
     plan( tests => 2 );
@@ -53,6 +56,48 @@ sub testNew {
         my $expectRE =  qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/;
         like( $got, $expectRE, $message );
     }
+}
+
+sub testGetDbh {
+    plan( tests => 4 );
+
+    {
+        my $message = "Returns cahced value if any";
+        my $obj = makeBam();
+        $obj->{'dbh'} = "DUMMY";
+        my $got = $obj->getDbh();
+        my $want = "DUMMY";
+        is( $got, $want, $message );
+    }
+
+    {
+        my $message = "Error if failes to get connection";
+        my $obj = makeBam();
+        my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
+        $module->mock( 'getConnection', sub { return undef } );
+        my $errorRE = qr/^DbConnectException: Failed to connect to the database\./;
+        throws_ok( sub { $obj->getDbh(); }, $errorRE, $message )
+    }
+
+    {
+        my $obj = makeBam();
+        my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
+        $module->mock( 'getConnection', sub { return "DUMMY" } );
+        my $dbh = $obj->getDbh();
+        {
+             my $message = "Returns new connection when creating one";
+             my $got = $dbh;
+             my $want = "DUMMY";
+             is( $got, $want, $message );
+        }
+        {
+             my $message = "Caches new connection when creating one";
+             my $got = $obj->{'dbh'};
+             my $want = "DUMMY";
+             is( $got, $want, $message );
+        }
+    }
+
 }
 
 sub testRun {
@@ -232,7 +277,7 @@ sub testParseSampleFile {
 }
 
 sub testLoadOptions {
-    plan( tests => 11 );
+    plan( tests => 15 );
 
     my %dbOpt = (
         'dbUser' => 'dummy', 'dbPassword' => 'dummy',
@@ -310,6 +355,43 @@ sub testLoadOptions {
         my $obj = $CLASS->new();
         # loadOptions called to do this...
         is_deeply($obj->{'_argumentsAR'}, ['status-local'], $message);
+    }
+
+    {
+        my $message = 'Error if no --dbUser opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbPassword' => 'dummy', 'dbHost' => 'host', 'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--dbUser option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --dbPassword opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbHost' => 'host', 'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--dbPassword option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --dbHost opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--dbHost option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --dbSchema opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host'
+        };
+        my $errorRE = qr/^--dbSchema option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
     }
 }
 

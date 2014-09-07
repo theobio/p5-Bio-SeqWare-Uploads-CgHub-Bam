@@ -535,8 +535,9 @@ sub do_status_local {
 
   my $dbh = $self->getDbh();
 
-Returns a cached database handle, or creates a new one if nothing is cached.
-Creating requires appropriate parameters are set.
+Returns a cached database handle, create and cahcing a new one first if not
+already existing. Creating requires appropriate parameters to be set and can
+fail with a "DbConnectionException:...";
 
 =cut
 
@@ -555,6 +556,8 @@ sub getDbh {
     if (! defined $dbh) {
         croak "DbConnectException: Failed to connect to the database.\n";
     }
+
+    $self->{'dbh'} = $dbh;
     return $dbh;
 }
 
