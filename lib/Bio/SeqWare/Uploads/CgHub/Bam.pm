@@ -102,6 +102,20 @@ sub getTimestamp {
                      $yr+1900, $mon+1, $day, $hr, $min, $sec);
 }
 
+=head2 getUuid
+
+    my $uuid = $self->getUuid();
+
+Creates and returns a new unique string form uuid like
+"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
+
+=cut
+
+sub getUuid {
+    my $class = shift;
+    return Data::GUID->new()->as_string();
+}
+
 =head1 INSTANCE METHODS
 
 =cut
@@ -142,7 +156,7 @@ Returns the fully initialized application object ready for running.
 sub init {
     my $self = shift;
 
-    $self->{'id'} = $self->makeUuid();
+    $self->{'id'} = $CLASS->getUuid();
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
@@ -690,21 +704,6 @@ sub say {
     }
     print $message;
 }
-
-=head2 makeUuid
-
-    my $uuid = $self->makeUuid();
-
-Creates and returns a new unique string form uuid like
-"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
-
-=cut
-
-sub makeUuid {
-    my $self = shift;
-    return Data::GUID->new()->as_string();
-}
-
 
 =head1 AUTHOR
 

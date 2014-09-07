@@ -29,7 +29,7 @@ subtest( 'loadArguments()' => \&testLoadArguments );
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
 subtest( 'say(),sayDebug(),SayVerbose()' => \&testSayAndSayDebugAndSayVerbose );
-subtest( 'makeUuid()'     => \&testMakeUuid    );
+subtest( 'getUuid()'     => \&testGetUuid    );
 subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
@@ -281,7 +281,7 @@ sub testLoadArguments {
     }
     {
         my $message = "error if 2nd argument is not an existing sample file";
-        my $noSuchFile = $obj->makeUuid();
+        my $noSuchFile = $CLASS->getUuid();
         my $errorRE = qr/I can't find the sample file '$noSuchFile'\.\n/;
         throws_ok( sub { $obj->loadArguments(['status-local', $noSuchFile]); }, $errorRE, $message );
     }
@@ -506,7 +506,7 @@ sub testGetConfigOptions {
         }
         {
             my $message = "Dies with bad filename";
-            my $badFileName = $obj->makeUuid() . ".notAnExistingFile";
+            my $badFileName = $CLASS->getUuid() . ".notAnExistingFile";
             my $expectError = qr/^Can't find config file: "$badFileName"\./;
             throws_ok( sub { $obj->getConfigOptions($badFileName) }, $expectError, $message);
         }
@@ -532,14 +532,11 @@ sub testGetConfigOptions {
     }
 }
 
-sub testMakeUuid {
+sub testGetUuid {
     plan( tests => 3);
 
-    @ARGV = qw(status-local);
-    my $obj = $CLASS->new();
-
-    my $uuid = $obj->makeUuid();
-    my $uuid2 = $obj->makeUuid();
+    my $uuid = $CLASS->getUuid();
+    my $uuid2 = $CLASS->getUuid();
     like( $uuid, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "uuid generated as string");
     like( $uuid2, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "another uuid generated as string");
     isnt( $uuid, $uuid2, "two successive uuids are not the same");
