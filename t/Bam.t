@@ -4,8 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 12
-;     # Main test module; run this many subtests
+use Test::More 'tests' => 13;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
@@ -17,12 +16,15 @@ use Bio::SeqWare::Config;    # To get default config file name
 use Bio::SeqWare::Uploads::CgHub::Bam;
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 my $TEST_CFG = File::Spec->catfile( "t", "Data", "test with space.config" );
+my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
+my $SAMPLE_FILE = File::Spec->catfile( "t", "Data", "sampleList.txt" );
 
 # Run these tests
 subtest( 'new()'      => \&testNew );
 subtest( 'run()'      => \&testRun );
 subtest( 'parseCli()'    => \&testParseCli    );
 subtest( 'loadOptions()'   => \&testLoadOptions );
+
 subtest( 'loadArguments()' => \&testLoadArguments );
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
@@ -31,7 +33,7 @@ subtest( 'makeUuid()'     => \&testMakeUuid    );
 subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
-
+subtest( 'parseSampleFile()' => \&testParseSampleFile);
 
 sub testNew {
     plan( tests => 2 );
@@ -64,6 +66,96 @@ sub testRun {
     }
 }
 
+sub testParseSampleFile {
+    plan( tests => 10 );
+
+    # Sample with bam file and headers
+    {
+        @ARGV = ('status-local', "$SAMPLE_FILE_BAM");
+        my $obj = $CLASS->new();
+        my $sampleRecDAT = $obj->parseSampleFile();
+        my $wantDAT = [
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '', bamFile => '' },
+            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG', bamFile => '' },
+            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG', bamFile => '/not/really' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '', bamFile => '/old/fake' },
+        ];
+        {
+            my $message = "Sample count correct";
+            my $got = scalar @$sampleRecDAT;
+            my $want = scalar @$wantDAT;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 1 (no barcode)";
+            my $got = $sampleRecDAT->[0];
+            my $want = $wantDAT->[0];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 2 ( with barcode)";
+            my $got = $sampleRecDAT->[1];
+            my $want = $wantDAT->[1];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 3 (barcode + bamFile)";
+            my $got = $sampleRecDAT->[2];
+            my $want = $wantDAT->[2];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 4 (no barcode + bamFile)";
+            my $got = $sampleRecDAT->[3];
+            my $want = $wantDAT->[3];
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+    # Samples no header, no extra info
+    {
+        @ARGV = ('status-local', "$SAMPLE_FILE");
+        my $obj = $CLASS->new();
+        my $sampleRecDAT = $obj->parseSampleFile();
+        my $wantDAT = [
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '' },
+            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG' },
+            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '' },
+        ];
+        {
+            my $message = "Sample count correct";
+            my $got = scalar @$sampleRecDAT;
+            my $want = scalar @$wantDAT;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 1 (no barcode)";
+            my $got = $sampleRecDAT->[0];
+            my $want = $wantDAT->[0];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 2 ( with barcode)";
+            my $got = $sampleRecDAT->[1];
+            my $want = $wantDAT->[1];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 3 (barcode )";
+            my $got = $sampleRecDAT->[2];
+            my $want = $wantDAT->[2];
+            is_deeply( $got, $want, $message );
+        }
+        {
+            my $message = "Record content ok sample 4 (no barcode)";
+            my $got = $sampleRecDAT->[3];
+            my $want = $wantDAT->[3];
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+}
 sub testLoadOptions {
     plan( tests => 11 );
 
@@ -162,8 +254,7 @@ sub testLoadArguments {
     }
     {
         my $command = "status-local";
-        my $sampleFileName = "t/Data/samplesToUpload.txt";
-        $obj->loadArguments([$command, $sampleFileName]);
+        $obj->loadArguments([$command, $SAMPLE_FILE]);
         {
             my $message = "2 args: 1st = command";
             my $got = $obj->{'command'};
@@ -173,7 +264,7 @@ sub testLoadArguments {
         {
             my $message = "2 args: 2nd = sampleFile";
             my $got = $obj->{'sampleFile'};
-            my $want = $sampleFileName;
+            my $want = $SAMPLE_FILE;
             is( $got, $want, $message );
         }
     }
@@ -197,9 +288,8 @@ sub testLoadArguments {
     {
         my $message = "error if more than 2 arguments";
         my $command = "status-local";
-        my $sampleFileName = "t/Data/samplesToUpload.txt";
         my $errorRE = qr/Too many arguments for cammand '$command'. Try --help.\n/;
-        throws_ok( sub { $obj->loadArguments([$command, $sampleFileName, 'foo']); }, $errorRE, $message );
+        throws_ok( sub { $obj->loadArguments([$command, $SAMPLE_FILE, 'foo']); }, $errorRE, $message );
     }
 }
 

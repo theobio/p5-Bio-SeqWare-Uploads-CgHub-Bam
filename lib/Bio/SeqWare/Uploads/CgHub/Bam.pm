@@ -13,6 +13,7 @@ use Sys::Hostname; # Get the hostname for logging
 use Getopt::Long;  # Parse command line options and arguments.
 use Pod::Usage;    # Usage messages for --help and option errors.
 use File::Spec::Functions qw(catfile);  # Generic file handling.
+use IO::File ;     # File io using variables as fileHandles.
 
 # Cpan modules
 use File::HomeDir qw(home);             # Finding the home directory is hard.
@@ -229,6 +230,86 @@ sub parseCli {
     $opt{'argumentsAR'} = \@arguments;
 
     return \%opt;
+}
+
+=head2 parseSampleFile 
+
+    my sampleDataRecords = $self->parseSampleFile()
+
+Read a tab delimited sample file and for each non-comment, non-blank,
+non header line, include a record of data in the returned array (ref) of
+samples. Each line in order will be represented by a hash (ref) with the keys
+'sample', 'flowcell', 'lane', and 'barcode'. If additional columns are present
+in the file, a header line is required.
+
+If a header is provided it must start with sample\tflowcell\tlane\tbarcode
+This way, each record will have an entry for each column, keyed by column name.
+
+If the first line in a file looks like a header (i.e it contains the text
+'sample' and 'flowcell' in that order, than it MUST be a real header line.
+
+=cut
+
+sub parseSampleFile {
+
+    my $self = shift;
+
+    my $inFH;
+    eval {
+        $inFH = IO::File->new("< $self->{'sampleFile'}");
+    };
+    my $error = $@;
+    if ($error || ! $inFH) {
+        croak( "Can't open sample file for reading: \"$self->{'sampleFile'}\".\n$error");
+    }
+
+    my @rows;
+    my $lineNum = 0;
+    my $isFirstLine = 1;
+    my $fieldDelim = qr/[ ]*\t[ ]*/;
+    my @headings = qw( sample flowcell lane barcode );
+
+    while ( my $line = <$inFH> ) {
+        ++$lineNum;
+        chomp $line;
+        next if ( $line =~ /^\s*$/ );  # Blank line
+        next if ( $line =~ /^\s*#/ );  # Comment line
+
+        my @fields = split( $fieldDelim, $line, -1);
+        if ($isFirstLine) {
+            $isFirstLine = 0;
+
+            # Handle first real line is header
+            if ($line =~ /^sample\tflowcell\tlane\tbarcode.*/) {
+                @headings = @fields;
+                for my $fieldName (@headings) {
+                    if (length $fieldName < 1 ) {
+                        croak "Sample file header can not have empty fields: $self->{'sampleFile'}.\n";
+                    }
+                 }
+                 next;
+            }
+            # Handle first real line is defective header
+            elsif ($line =~ /.*sample.*flowcell.*/) {
+                croak "Looks like sample file has a bad header line: $self->{'sampleFile'}";
+            }
+            # Drop through to handle first line is data line.
+        }
+
+        # Handle data line.
+
+        if (scalar @fields != scalar @headings ) {
+            croak "File seems to be missing data from line $lineNum: \n$line\n";
+        }
+        my $lineHR;
+        for( my $col = 0; $col < scalar @fields; $col++) {
+            $lineHR->{"$headings[$col]"} = $fields[$col];
+        }
+        push @rows, $lineHR;
+
+    } # Iterate over every line in $self->{'sampleFile'}.
+
+    return \@rows;
 }
 
 =head2 getConfigOptions
