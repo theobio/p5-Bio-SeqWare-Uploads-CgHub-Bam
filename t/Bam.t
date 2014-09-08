@@ -4,10 +4,12 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 15;    # Main test module; run this many subtests
+use Test::More 'tests' => 17;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
+
 use Test::MockModule;            # Fake subroutine returns from other modules.
-use DBD::Mock;                   # Fake database results
+use DBD::Mock;                   # Fake database results.
+use Test::MockObject::Extends;   # Fake subroutines from this module.
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
 use File::Spec;              # Generic file handling.
@@ -39,7 +41,9 @@ subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
 subtest( 'parseSampleFile()' => \&testParseSampleFile);
 subtest( 'getDbh()'  => \&testGetDbh);
-subtest( 'DESTROY()' => \&testDESTROY);
+subtest( 'DESTROY()' => \&testDESTROY );
+subtest( 'setUploadStatus()' => \&testSetUploadStatus );
+subtest( 'setUDone()' => \&testSetDone );
 
 sub testNew {
     plan( tests => 2 );
@@ -127,6 +131,88 @@ sub testGetDbh {
              my $got = blessed $dbh;
              my $want = "DBI::db";
              is( $got, $want, $message );
+        }
+    }
+}
+
+sub testSetUploadStatus {
+    plan( tests => 3 );
+
+    # valid run.
+    my $newStatus = "dummy_done";
+    my $upload_id = 21;
+    {
+        my @dbEvent = ({
+            'statement'   => qr/UPDATE upload SET status = .*/msi,
+            'bound_params' => [ $newStatus, $upload_id ],
+            'results'  => [ [ 'rows' ], [] ],
+        });
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setUploadStatus', @dbEvent );
+        {
+            my $message = "setUploadStatus with good data works.";
+            my $got = $obj->setUploadStatus( $upload_id, $newStatus );
+            my $want = 1;
+            is( $got, $want, $message );
+        }
+    }
+
+    # Bad returned results.
+    {
+        my @dbEvent = ({
+            'statement'   => qr/UPDATE upload SET status = .*/msi,
+            'bound_params' => [ $newStatus, $upload_id ],
+            'results'  => [ [ 'rows' ], ],
+        });
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'badSetUploadStatus', @dbEvent );
+        {
+            my $message = "setUploadStatus fails if db returns unexpected results.";
+            my $error1RES = 'DbStatusUpdateException: Failed to change upload record ' . $upload_id. ' to ' . $newStatus. '\.';
+            my $error2RES = 'Cleanup likely needed\. Error was:';
+            my $error3RES = 'Updated 0 update records, expected 1\.';
+            my $errorRE = qr/$error1RES\n$error2RES\n$error3RES/m;
+            throws_ok( sub { $obj->setUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
+        }
+    }
+
+    # DB error.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql => "UPDATE upload SET status = ? WHERE upload_id = ?",
+            results => DBD::Mock->NULL_RESULTSET,
+            failure => [ 5, 'Ooops.' ],
+        };
+        {
+            my $message = "setUploadStatus fails if db throws error.";
+            my $error1RES = 'DbStatusUpdateException: Failed to change upload record ' . $upload_id. ' to ' . $newStatus. '\.';
+            my $error2RES = 'Cleanup likely needed\. Error was:';
+            my $error3RES = 'Ooops\.';
+            my $errorRE = qr/$error1RES\n$error2RES\n.*$error3RES/m;
+            throws_ok( sub { $obj->setUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
+        }
+    }
+}
+
+sub testSetDone {
+    plan( tests => 1 );
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj = Test::MockObject::Extends->new( $obj );
+        $obj->mock( 'setUploadStatus', sub { shift; return (shift,shift,shift); } );
+        {
+            my $message = "Set done calls setUploadStatus correctly.";
+            my @want = (21, "dummy-status_done", undef);
+            my @got = $obj->setDone( {'upload_id' => 21}, "dummy-status" );
+            is_deeply( \@got, \@
+            want, $message);
         }
     }
 

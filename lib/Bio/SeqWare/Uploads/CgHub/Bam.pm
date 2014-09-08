@@ -274,7 +274,7 @@ sub parseCli {
 
 =head2 parseSampleFile 
 
-    my sampleDataRecords = $self->parseSampleFile()
+    my $sampleDataRecords = $self->parseSampleFile()
 
 Read a tab delimited sample file and for each non-comment, non-blank,
 non header line, include a record of data in the returned array (ref) of
@@ -464,11 +464,42 @@ sub loadArguments {
 =head2 do_select
 
 Called automatically by runner framework to implement the select command.
-Not intended to be called directly.
+Not intended to be called directly. Implemets the "select" step of the
+workflow.
+
+Uses _select_getUploadList to generate and validate a list of uploads to
+process, each element a hash-ref with all data needed to start the upload
+process. The list may be empty, in which case this just exits with success.
+
+For each upload to process:
+
+1 - a new upload record will be inserted (with status of "select_running",
+the initial status).
+
+2 - a new upload-file record will be inserted.
+
+3 - the upload record will have its status changed to "select_completed".
+
+If 2 fails, the upload record will be set to "select_failed_<NamedException>,
+Otherwise a simple failured with error message will occur - no way to record
+some kinds of db failures in the db.
 
 =cut
 
 sub do_select {
+    my $self = shift;
+    my $uploadListAR = $self->_select_getUploadList();
+    for my $uploadRec (@$uploadListAR) {
+        my $upload_id = $self->_select_insertUpload( $uploadRec );
+        $uploadRec->{'upload_id'} = $upload_id;
+        eval {
+            $self->_select_insertUploadFile( $uploadRec );
+        };
+        if ($@) {
+            $self->setFailandDie( $uploadRec, "select", $@ );
+        }
+        $self->setDone( $uploadRec, "select" );
+    }
     return 1;
 }
 
@@ -480,6 +511,7 @@ Not intended to be called directly.
 =cut
 
 sub do_meta_generate {
+    my $self = shift;
     return 1;
 }
 
@@ -491,6 +523,7 @@ Not intended to be called directly.
 =cut
 
 sub do_meta_validate {
+    my $self = shift;
     return 1;
 }
 
@@ -502,6 +535,7 @@ Not intended to be called directly.
 =cut
 
 sub do_meta_upload {
+    my $self = shift;
     return 1;
 }
 
@@ -513,6 +547,7 @@ Not intended to be called directly.
 =cut
 
 sub do_file_upload {
+    my $self = shift;
     return 1;
 }
 
@@ -524,6 +559,7 @@ Not intended to be called directly.
 =cut
 
 sub do_status_update {
+    my $self = shift;
     return 1;
 }
 
@@ -535,6 +571,7 @@ Not intended to be called directly.
 =cut
 
 sub do_status_remote {
+    my $self = shift;
     return 1;
 }
 
@@ -546,7 +583,113 @@ Not intended to be called directly.
 =cut
 
 sub do_status_local {
+    my $self = shift;
     return 1;
+}
+
+=head2 setDone
+
+=cut
+
+sub setDone {
+    my $self = shift;
+    my $uploadHR = shift;
+    my $step = shift;
+
+    return $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_done");
+
+}
+
+=head2 setFailAndDie
+
+=cut
+
+sub setFailAndDie {
+    my $self = shift;
+    my $uploadHR = shift;
+    my $step = shift;
+    my $error = shift;
+
+    my $errorName = "Unknown";
+    if ($error =~/^([^\s]+)Exception:/) {
+        $errorName = $1;
+    }
+
+    $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
+
+    die $error;
+}
+
+=head2 setUploadStatus
+
+    my $self->setUploadStatus( $upload_id, $newStatus )
+
+Changes the status of the specified upload record to the specified status.
+Either returns 1 for success or dies with error.
+
+=cut
+
+sub setUploadStatus {
+    my $self = shift;
+    my $upload_id = shift;
+    my $newStatus = shift;
+
+    my $dbh = $self->getDbh();
+
+    my $updateUploadRecSQL =
+        "UPDATE upload SET status = ? WHERE upload_id = ?";
+
+    eval {
+        my $updateSTH = $dbh->prepare($updateUploadRecSQL);
+        my $isOk = $updateSTH->execute( $newStatus, $upload_id );
+        my $rowHR = $updateSTH->fetchrow_hashref();
+        my $updateCount = $updateSTH->rows();
+        if ($updateCount != 1) {
+            die "Updated " . $updateSTH->rows() . " update records, expected 1.\n";
+        }
+        $updateSTH->finish();
+    };
+    if ($@) {
+         die "DbStatusUpdateException: Failed to change upload record $upload_id to $newStatus.\nCleanup likely needed. Error was:\n$@\n";
+    }
+
+    return 1;
+
+}
+
+=head2 _select_getUploadList
+
+    my $uploadsAR = $self->getUploadsList();
+
+Uses parseSampleFile to get a list of data for uploading. Each line will be an
+element in the list, a hash-ref with all data needed to initiate uploading
+included  May be empty if nothing to do.
+
+Currently using file list; TODO extend to use command line parameters.
+
+=cut
+
+sub _select_getUploadList {
+    my $self = shift;
+    my $uploadsDAT = $self->parseSampleFile();
+
+    my @uploadHRs = ();
+    for my $record (@$uploadsDAT) {
+        $record->{'workflow_id'} = $self->{'workflow_id'};
+        my $sample_id = $self->getSampleId( $record );
+        $record->{'sample_id'} = $sample_id;
+        my $file_id = $self->getFileId( $record );
+        my $uploadHR = {
+            sample_id => $sample_id,
+            file_id => $file_id,
+            target => 'CGHUB_BAM',
+            status => 'select_running',
+            cghub_analysis_id => $CLASS->getUuid(),
+            metadata_dir=>'/datastore/tcga/cghub/v2_uploads'
+        };
+        push @uploadHRs, $uploadHR;
+    }
+    return \@uploadHRs
 }
 
 =head2 _select_insertUpload
@@ -667,6 +810,32 @@ sub getDbh {
 
     $self->{'dbh'} = $dbh;
     return $dbh;
+}
+
+=head2 getSampleId
+
+    $sample_id = $self->getSampleId( $record );
+
+=cut
+
+sub getSampleId {
+    my $self = shift;
+    my $record = shift;
+
+    return 19;
+}
+
+=head2 getFileId
+
+    $file_id = $self->getFileId( $record );
+
+=cut
+
+sub getFileId {
+    my $self = shift;
+    my $record = shift;
+
+    return 5;
 }
 
 =head2 fixupTildePath
@@ -837,7 +1006,6 @@ sub sayVerbose {
 Output text like print, but takes object option like sayVerbose and
 sayDebug.
 
-
 If the --log option is set, adds a prefix to each line of a message
 using logifyMessage.
 
@@ -845,6 +1013,7 @@ If an object parameter is passed, it will be printed on the following line.
 Normal stringification is performed, so $object can be anything, including
 another string, but if it is a hash-ref or an array ref, it will be formated
 with Data::Dumper before printing.
+
 See also sayVerbose, sayDebug.
 
 =cut

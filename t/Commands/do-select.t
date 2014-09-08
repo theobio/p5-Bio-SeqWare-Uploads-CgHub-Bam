@@ -3,24 +3,18 @@ use 5.014;
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More 'tests' => 7;     # Main test module; run this many tests
+use Test::More 'tests' => 6;     # Main test module; run this many tests
 use Test::Exception;
 use DBD::Mock;                   # Fake database results
+use File::Spec;              # Generic file handling.
 
 # This class tests ...
 use Bio::SeqWare::Uploads::CgHub::Bam;
 
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
-my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy select);
+my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
+my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy select ), $SAMPLE_FILE_BAM);
 
-{
-    my $message = "no option, no argument";
-    my $obj = makeBamForSelect();
-    {
-        $message .= " smoke test";
-        ok( $obj->do_select() );
-    }
-}
 
 # Tests for _select_insertUpload()
 {
@@ -28,7 +22,7 @@ my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dum
     my $recHR = {
         sample_id => 19,
         target => 'CGHUB_BAM',
-        status => 'init-running',
+        status => 'select_running',
         cghub_analysis_id => $CLASS->getUuid(),
         metadata_dir=>'/datastore/tcga/cghub/v2_uploads'
     };
