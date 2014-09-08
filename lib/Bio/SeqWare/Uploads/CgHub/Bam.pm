@@ -549,6 +549,50 @@ sub do_status_local {
     return 1;
 }
 
+=head2 _select_insertUpload
+
+    $self->_select_insertUpload( $recordHR );
+
+Insers a new upload record. The associated upload_file record will be added
+by _select_insertUploadFile. Either succeeds or dies with error. All data for
+upload must be in the provided hash, with the keys the field names from the
+upload table.
+
+=cut
+
+sub _select_insertUpload {
+    my $self = shift;
+    my $rec = shift;
+    my $dbh = $self->getDbh();
+
+    my $insertUploadRecSQL =
+        "INSERT INTO upload ( sample_id, target, status, cghub_analysis_id, metadata_dir)
+         VALUES ( ?, ?, ?, ?, ? )
+         RETURNING upload_id";
+
+    my $rowHR;
+    eval {
+        my $insertSTH = $dbh->prepare($insertUploadRecSQL);
+        my $isOk = $insertSTH->execute(
+            $rec->{'sample_id'},
+            $rec->{'target'},
+            $rec->{'status'},
+            $rec->{'cghub_analysis_id'},
+            $rec->{'metadata_dir'},
+        );
+        $rowHR = $insertSTH->fetchrow_hashref();
+        $insertSTH->finish();
+        if (! $rowHR) {
+            die "Id of the upload record inserted was not retrieved.\n";
+        }
+    };
+    if ($@) {
+         die "dbUploadInsertException: Insert of new upload record failed. Error was:\n$@\n";
+    }
+
+    return 1;
+}
+
 =head2 getDbh
 
   my $dbh = $self->getDbh();
