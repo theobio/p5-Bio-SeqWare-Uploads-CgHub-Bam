@@ -551,12 +551,14 @@ sub do_status_local {
 
 =head2 _select_insertUpload
 
-    $self->_select_insertUpload( $recordHR );
+    my $upload_id = $self->_select_insertUpload( $recordHR );
 
-Insers a new upload record. The associated upload_file record will be added
+Inserts a new upload record. The associated upload_file record will be added
 by _select_insertUploadFile. Either succeeds or dies with error. All data for
 upload must be in the provided hash, with the keys the field names from the
 upload table.
+
+Returns the id of the upload record inserted.
 
 =cut
 
@@ -570,7 +572,7 @@ sub _select_insertUpload {
          VALUES ( ?, ?, ?, ?, ? )
          RETURNING upload_id";
 
-    my $rowHR;
+    my $upload_id;
     eval {
         my $insertSTH = $dbh->prepare($insertUploadRecSQL);
         my $isOk = $insertSTH->execute(
@@ -580,17 +582,62 @@ sub _select_insertUpload {
             $rec->{'cghub_analysis_id'},
             $rec->{'metadata_dir'},
         );
-        $rowHR = $insertSTH->fetchrow_hashref();
+        my $rowHR = $insertSTH->fetchrow_hashref();
         $insertSTH->finish();
-        if (! $rowHR) {
+        if (! $rowHR->{'upload_id'}) {
             die "Id of the upload record inserted was not retrieved.\n";
         }
+        $upload_id = $rowHR->{'upload_id'};
     };
     if ($@) {
          die "dbUploadInsertException: Insert of new upload record failed. Error was:\n$@\n";
     }
 
-    return 1;
+    return $upload_id;
+}
+
+=head2 _select_insertUploadFile
+
+    my $upload_id = $self->_select_insertUploadFile( $recordHR );
+
+Inserts a new uploadFile record. The associated upload record must already
+exist (i.e. have been inserted by _select_insertUpload). Either succeeds or
+dies with error. All data for upload-file must be in the provided hash, with
+the keys the field names from the uploadFile table.
+
+Returns the id of the file record linked to.
+
+=cut
+
+sub _select_insertUploadFile {
+    my $self = shift;
+    my $rec = shift;
+    my $dbh = $self->getDbh();
+
+    my $insertUploadFileRecSQL =
+        "INSERT INTO upload_file ( upload_id, file_id)
+         VALUES ( ?, ? )
+         RETURNING file_id";
+
+    my $file_id;
+    eval {
+        my $insertSTH = $dbh->prepare($insertUploadFileRecSQL);
+        my $isOk = $insertSTH->execute(
+            $rec->{'upload_id'},
+            $rec->{'file_id'},
+        );
+        my $rowHR = $insertSTH->fetchrow_hashref();
+        $insertSTH->finish();
+        if (! $rowHR->{'file_id'}) {
+            die "Id of the file record linked to was not retrieved.\n";
+        }
+        $file_id = $rowHR->{'file_id'};
+    };
+    if ($@) {
+         die "dbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n";
+    }
+
+    return $file_id;
 }
 
 =head2 getDbh

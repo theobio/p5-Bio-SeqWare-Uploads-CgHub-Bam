@@ -6,6 +6,7 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
  [API] - Add class function getUuid(), drop object function, makeUuid().
  [ADD] - Add CLI argument extraction.
  [ADD] - Sample file input added (as argument).
+ [ADD] - Can insert upload and upload_file records.
  [ADD] - Associate a lane_id with an input sample (row).
 
 0.000.001 - App Framework
