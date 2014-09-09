@@ -208,8 +208,11 @@ sub checkCompatibleHash {
     my $oneHR   = shift;
     my $twoHR   = shift;
 
-    if ( ! defined $oneHR || ! defined $twoHR) {
-        return undef;
+    if ( ! defined $oneHR ) {
+        return;
+    }
+    if ( ! defined $twoHR ) {
+        return;
     }
 
     my $bad;

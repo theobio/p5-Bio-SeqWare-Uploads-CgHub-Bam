@@ -1291,47 +1291,47 @@ sub testEnsureIsntEmptyString {
 sub testCheckCompatibleHash {
     plan( tests => 36);
 
-    is_deeply( $CLASS->checkCompatibleHash( undef, undef ), undef );
+    is( $CLASS->checkCompatibleHash( undef, undef ), undef );
 
-    is_deeply( $CLASS->checkCompatibleHash( undef, {}    ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {},    {}    ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {},    undef ), undef );
+    is( $CLASS->checkCompatibleHash( undef, {}    ), undef );
+    is( $CLASS->checkCompatibleHash( {},    {}    ), undef );
+    is( $CLASS->checkCompatibleHash( {},    undef ), undef );
 
-    is_deeply( $CLASS->checkCompatibleHash( undef,  {A=>1} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {},     {A=>1} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1}, {A=>1} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1}, undef  ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1}, {}     ), undef );
+    is( $CLASS->checkCompatibleHash( undef,  {A=>1} ), undef );
+    is( $CLASS->checkCompatibleHash( {},     {A=>1} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1}, {A=>1} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1}, undef  ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1}, {}     ), undef );
 
-    is_deeply( $CLASS->checkCompatibleHash( undef,       {A=>1,B=>2} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {},          {A=>1,B=>2} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1},      {A=>1,B=>2} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>1,B=>2} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2}, undef       ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {}          ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>1}      ), undef );
+    is( $CLASS->checkCompatibleHash( undef,       {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {},          {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1},      {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, undef       ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {}          ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>1}      ), undef );
 
-    is_deeply( $CLASS->checkCompatibleHash( undef,       {A=>undef}  ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {},          {A=>undef}  ), undef );
+    is( $CLASS->checkCompatibleHash( undef,       {A=>undef}  ), undef );
+    is( $CLASS->checkCompatibleHash( {},          {A=>undef}  ), undef );
     is_deeply( $CLASS->checkCompatibleHash( {A=>1},      {A=>undef}  ), {A=>[1,undef]} );
     is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>undef}  ), {A=>[1,undef]} );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  {A=>undef}  ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  undef       ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  {}          ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef},  {A=>undef}  ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef},  undef       ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef},  {}          ), undef );
     is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  {A=>1}      ), {A=>[undef,1]} );
     is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  {A=>1,B=>2} ), {A=>[undef,1]} );
 
-    is_deeply( $CLASS->checkCompatibleHash( undef,           {A=>undef,B=>9} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {},              {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( undef,           {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( {},              {A=>undef,B=>9} ), undef );
     is_deeply( $CLASS->checkCompatibleHash( {A=>1},          {A=>undef,B=>9} ), {A=>[1,undef]} );
     is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2},     {A=>undef,B=>9} ), {A=>[1,undef],B=>[2,9]} );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef},      {A=>undef,B=>9} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>undef,B=>9} ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, undef           ), undef );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {}              ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef},      {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, undef           ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {}              ), undef );
     is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>1}          ), {A=>[undef,1]} );
     is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>1,B=>2}     ), {A=>[undef,1],B=>[9,2]} );
-    is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>undef}      ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>undef}      ), undef );
 
 }
 
