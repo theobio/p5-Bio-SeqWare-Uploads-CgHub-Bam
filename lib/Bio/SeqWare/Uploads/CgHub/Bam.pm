@@ -471,7 +471,12 @@ sub parseSampleFile {
         }
         my $lineHR;
         for( my $col = 0; $col < scalar @fields; $col++) {
-            $lineHR->{"$headings[$col]"} = $fields[$col];
+            if ( length ( $fields[$col] ) < 1 ) {
+                $lineHR->{"$headings[$col]"} = undef;
+            }
+            else {
+                $lineHR->{"$headings[$col]"} = $fields[$col];
+            }
         }
         push @rows, $lineHR;
 
@@ -547,6 +552,8 @@ sub loadOptions {
     unless ( $val ) { croak("--workflow_id option required." ); };
     my %okVals = ( '38' => 1, '39' => 1, '40' => 1);
     unless (exists $okVals{$val}) { croak("--workflow_id must be 38, 39, or 40." ); };
+    $self->{'workflow_id'} = $val;
+
     return 1;
 }
 
@@ -595,38 +602,49 @@ Called automatically by runner framework to implement the launch command.
 Not intended to be called directly. Implemets the "launch" step of the
 workflow.
 
-Uses _launch_getUploadList to generate and validate a list of uploads to
-process, each element a hash-ref with all data needed to start the upload
-process. The list may be empty, in which case this just exits with success.
+Uses parseSampleFile() to generate a list to upload. Each entry in this list is
+processed and upload independently as follows:
 
-For each upload to process:
+1. _launch_prepareQueryInfo(): Adaptor mapping output hash from parseSampleFile
+to input hash for dbGetBamFileInfo()
 
-1 - a new upload record will be inserted (with status of "launch_running",
-the initial status).
+2. dbGetBamFileInfo() is a fairly generic query into the database given 
+a minimal hash of lookup data. It outputs a hash with a bunch of database data.
+Data in the lookup set beyond what is required for retrieval is validated
+against the database data retrieved when the keys match.
 
-2 - a new upload-file record will be inserted.
+3. _launch_prepareUploadInfo(): Adaptor mapping output hash from dbGetBamFileInfo
+to input hash for dbinsertUpload.
 
-3 - the upload record will have its status changed to "launch_completed".
+4. dbinsertUpload() Inserts the upload record for the above data and returns
+the upload_id inserted.
 
-If 2 fails, the upload record will be set to "launch_failed_<NamedException>,
-Otherwise a simple failured with error message will occur - no way to record
-some kinds of db failures in the db.
+5. The upload_id is added to the data.
+
+6. dbinsertUploadFile() inserts the upoad file record 
+
+7. The upload record is marked as failed if an errors occured in 6 (Can't
+record any errors earlier as the upload record does not yet exist. Otherwise
+it is marked as completed.
 
 =cut
 
 sub do_launch {
     my $self = shift;
-    my $uploadListAR = $self->_launch_getUploadList();
-    for my $uploadRec (@$uploadListAR) {
-        my $upload_id = $self->_launch_insertUpload( $uploadRec );
-        $uploadRec->{'upload_id'} = $upload_id;
+    my $selectedDAT = $self->parseSampleFile();
+    for my $selectedHR (@$selectedDAT) {
+        my $queryHR = $self->_launch_prepareQueryInfo( $selectedHR );
+        my $seqRunDAT = $self->dbGetBamFileInfo( $queryHR );
+        my $uploadHR = $self->_launch_prepareUploadInfo($seqRunDAT);
+        my $upload_id = $self->dbinsertUpload( $uploadHR );
+        $uploadHR->{'upload_id'} = $upload_id;
         eval {
-            $self->_launch_insertUploadFile( $uploadRec );
+            $self->dbinsertUploadFile( $uploadHR );
         };
         if ($@) {
-            $self->setFailandDie( $uploadRec, "launch", $@ );
+            $self->setFail( $uploadHR, "launch", $@ );
         }
-        $self->setDone( $uploadRec, "launch" );
+        $self->setDone( $uploadHR, "launch" );
     }
     return 1;
 }
@@ -803,40 +821,57 @@ sub setUploadStatus {
 
 }
 
-=head2 _launch_getUploadList
+=head2 _launch_prepareQueryInfo
 
-    my $uploadsAR = $self->getUploadsList();
+    my $queryHR = $self->_launch_translateToQueryInfo( $parsedUploadList );
 
-Uses parseSampleFile to get a list of data for uploading. Each line will be an
-element in the list, a hash-ref with all data needed to initiate uploading
-included  May be empty if nothing to do. Provides at minimum the keys
-'sample', 'flowcell', 'lane_index', 'workflow_id' and 'barcode'
-
-Currently using file list; TODO extend to use command line parameters.
+Data processing step converting a hash obtained from parseSampleFile
+to that useable by getBamFileInfo. Used to isolate the code mapping the
+headers from the file to columns in the database and to convert file value
+representations to those used by the database. This is ill defined and a
+potential change point.
 
 =cut
 
-sub _launch_getUploadList {
+sub _launch_prepareQueryInfo {
     my $self = shift;
-    my $uploadsDAT = $self->parseSampleFile();
+    my $inHR = shift;
 
-    my @uploadHRs = ();
-    for my $record (@$uploadsDAT) {
-        $record->{'workflow_id'} = $self->{'workflow_id'}; # from option
-        my $sample_id = $self->getSampleId( $record );
-        $record->{'sample_id'} = $sample_id;
-        my $file_id = $self->getFileId( $record );
-        my $uploadHR = {
-            sample_id => $sample_id,
-            file_id => $file_id,
-            target => 'CGHUB_BAM',
-            status => 'launch_running',
-            cghub_analysis_id => $CLASS->getUuid(),
-            metadata_dir=>'/datastore/tcga/cghub/v2_uploads'
-        };
-        push @uploadHRs, $uploadHR;
-    }
-    return \@uploadHRs
+    my %queryInfo = %$inHR;
+    $queryInfo{'lane_index' } = $inHR->{'lane'} - 1;
+    $queryInfo{'workflow_id'} = $self->{'workflow_id'};
+    if (exists $inHR->{'bam_file'}) {$queryInfo{'file_path'} = $inHR->{'bam_file'};};
+    if (exists $inHR->{'file_path'}) {$queryInfo{'file_path'} = $inHR->{'file_path'};};
+
+    return \%queryInfo
+}
+
+=head2 _launch_prepareUploadInfo
+
+    my $uploadsAR = $self->_launch_prepareUploadInfo( $queryHR );
+
+Data processing step converting a hash obtained from getBamFileInfo
+to that useable by dbInsertUpload(). Used to isolate the code mapping the
+data recieved from the generic lookup routine to the specific upload
+information needed by this program in managing uploads of bam files to cghub.
+This is a potential change point.
+
+=cut
+
+sub _launch_prepareUploadInfo {
+    my $self = shift;
+    my $datHR = shift;
+
+   my %upload = (
+      'sample_id'         => $datHR->{'sample_id'},
+      'file_id'           => $datHR->{'file_id'},
+      'target'            => 'CGHUB_BAM',
+      'status'            => 'launch_running',
+      'metadata_dir'      => '/datastore/tcga/cghub/v2_uploads',
+      'cghub_analysis_id' => $CLASS->getUuid(),
+   );
+
+   return \%upload;
 }
 
 =head2 _launch_insertUpload

@@ -532,10 +532,10 @@ sub testParseSampleFile {
         my $obj = $CLASS->new();
         my $sampleRecDAT = $obj->parseSampleFile();
         my $wantDAT = [
-            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '', bamFile => '' },
-            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG', bamFile => '' },
-            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG', bamFile => '/not/really' },
-            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '', bamFile => '/old/fake' },
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => undef, bam_file => undef },
+            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG', bam_file => undef },
+            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG', bam_file => '/not/really' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => undef, bam_file => '/old/fake' },
         ];
         {
             my $message = "Sample count correct";
@@ -575,10 +575,10 @@ sub testParseSampleFile {
         my $obj = $CLASS->new();
         my $sampleRecDAT = $obj->parseSampleFile();
         my $wantDAT = [
-            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '' },
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => undef },
             { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG' },
             { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG' },
-            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => undef },
         ];
         {
             my $message = "Sample count correct";
@@ -686,7 +686,7 @@ sub testParseSampleFile {
 }
 
 sub testLoadOptions {
-    plan( tests => 17 );
+    plan( tests => 19 );
 
     my %reqOpt = (
         'dbUser' => 'dummy', 'dbPassword' => 'dummy',
@@ -734,6 +734,19 @@ sub testLoadOptions {
         my $optHR = { 'log' => 1, %reqOpt};
         $obj->loadOptions($optHR);
         ok($obj->{'_optHR'}->{'log'}, "log set if needed.");
+    }
+    {
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
+        $obj->loadOptions( \%reqOpt );
+        ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
+    }
+
+    # --workflow_id
+    {
+        @ARGV = ('--log', @DEF_CLI);
+        my $obj = $CLASS->new();
+        ok($obj->{'workflow_id'} = 38, "workflow id is set.");
     }
     {
         @ARGV = @DEF_CLI;

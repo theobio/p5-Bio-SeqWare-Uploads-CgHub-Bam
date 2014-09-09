@@ -3,10 +3,11 @@ use 5.014;
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More 'tests' => 6;     # Main test module; run this many tests
+use Test::More 'tests' => 12;     # Main test module; run this many tests
 use Test::Exception;
 use DBD::Mock;                   # Fake database results
 use File::Spec;              # Generic file handling.
+use Data::Dumper;
 
 # This class tests ...
 use Bio::SeqWare::Uploads::CgHub::Bam;
@@ -161,6 +162,65 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
     }
 }
 
+# Testing _launch_prepareQueryInfo
+{
+    my $obj = makeBamForlaunch();
+    my $inputDAT = $obj->parseSampleFile();
+    {
+        my $message = "Line 1 of sample file converted correctly for Query.";
+        my $got = $obj->_launch_prepareQueryInfo( $inputDAT->[0] );
+        my $want = { 'sample' => 'TCGA1', 'flowcell' => 'UNC1', 'workflow_id' => 38,
+            'lane' => 6, 'lane_index' => 5, 'barcode' => undef,
+            'file_path' => undef, 'bam_file' => undef };
+        is_deeply( $got, $want, $message)
+    }
+    {
+        my $message = "Line 2 of sample file converted correctly for Query.";
+        my $got = $obj->_launch_prepareQueryInfo( $inputDAT->[1] );
+        my $want = { 'sample' => 'TCGA2', 'flowcell' => 'UNC2', 'workflow_id' => 38,
+            'lane' => 7, 'lane_index' => 6, 'barcode' => 'ATTCGG',
+            'file_path' => undef, 'bam_file' => undef };
+        is_deeply( $got, $want, $message)
+    }
+    {
+        my $message = "Line 3 of sample file converted correctly for Query.";
+        my $got = $obj->_launch_prepareQueryInfo( $inputDAT->[2] );
+        my $want = { 'sample' => 'TCGA3', 'flowcell' => 'UNC3', 'workflow_id' => 38,
+             'lane' => 8, 'lane_index' => 7, 'barcode' => 'ATTCGG',
+             'file_path' => '/not/really', 'bam_file' => '/not/really' };
+        is_deeply( $got, $want, $message)
+    }
+    {
+        my $message = "Line 4 of sample file converted correctly for Query.";
+        my $got = $obj->_launch_prepareQueryInfo( $inputDAT->[3] );
+        my $want = { 'sample' => 'TCGA4', 'flowcell' => 'UNC4', 'workflow_id' => 38,
+             'lane' => 1, 'lane_index' => 0, 'barcode' => undef,
+             'file_path' => '/old/fake', 'bam_file' => '/old/fake' };
+        is_deeply( $got, $want, $message)
+    }
+}
+
+# Testing _launch_prepareUploadInfo
+{
+    my $obj = makeBamForlaunch();
+    my $inputHR = { 'sample_id' => 19, 'file_id' => 5,
+             'lane_index' => 0, 'barcode' => 'ATGATG', 'file_path' => '/old/fake'  };
+    my $forUploadHR = $obj->_launch_prepareUploadInfo( $inputHR );
+    {
+        my $message = "uuid added for upload";
+        my $matchRE = qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/;
+        like ($forUploadHR->{'cghub_analysis_id'}, $matchRE, $message);
+    }
+    {
+        my $message = "Rest of upload record correct";
+        my %got = %$forUploadHR;
+        delete $got{'cghub_analysis_id'};
+        my %want = ('sample_id' => 19, 'target' => 'CGHUB_BAM', 'file_id' => 5,
+        'status' => 'launch_running', 'metadata_dir' => '/datastore/tcga/cghub/v2_uploads' );
+        is_deeply( \%got, \%want, $message)
+    }
+}
+
 sub makeBamForlaunch {
 
     @ARGV = @DEF_CLI;
@@ -176,5 +236,6 @@ sub makeMockDbh {
         '',
         { 'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1 },
     );
+    
     return $mockDbh;
 }
