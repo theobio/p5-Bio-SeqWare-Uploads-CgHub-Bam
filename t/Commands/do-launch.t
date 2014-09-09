@@ -13,16 +13,16 @@ use Bio::SeqWare::Uploads::CgHub::Bam;
 
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
-my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy select ), $SAMPLE_FILE_BAM);
+my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 launch ), $SAMPLE_FILE_BAM);
 
 
-# Tests for _select_insertUpload()
+# Tests for _launch_insertUpload()
 {
     my $mockUploadId = 21;
     my $recHR = {
         sample_id => 19,
         target => 'CGHUB_BAM',
-        status => 'select_running',
+        status => 'launch_running',
         cghub_analysis_id => $CLASS->getUuid(),
         metadata_dir=>'/datastore/tcga/cghub/v2_uploads'
     };
@@ -38,12 +38,12 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
                                 $recHR->{metadata_dir}],
             'results'  => [[ 'upload_id' ], [ $mockUploadId ]],
         });
-        my $obj = makeBamForSelect();
+        my $obj = makeBamForlaunch();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadRecord', @dbEvent );
         {
-            my $message = "_select_insertUpload with good data works.";
-            my $got = $obj->_select_insertUpload( $recHR );
+            my $message = "_launch_insertUpload with good data works.";
+            my $got = $obj->_launch_insertUpload( $recHR );
             my $want = $mockUploadId;
             is( $got, $want, $message );
         }
@@ -51,7 +51,7 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
 
     # DB error.
     {
-        my $obj = makeBamForSelect();
+        my $obj = makeBamForlaunch();
         $obj->{'dbh'}->{mock_add_resultset} = {
             sql => "INSERT INTO upload ( sample_id, target, status, cghub_analysis_id, metadata_dir)
          VALUES ( ?, ?, ?, ?, ? )
@@ -60,11 +60,11 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
             failure => [ 5, 'Ooops.' ],
         };
         {
-            my $message = "_select_insertUpload fails if db throws error.";
+            my $message = "_launch_insertUpload fails if db throws error.";
             my $error1RES = 'dbUploadInsertException: Insert of new upload record failed\. Error was:';
             my $error2RES = 'Ooops\.';
             my $errorRE = qr/$error1RES\n.*$error2RES/m;
-            throws_ok( sub { $obj->_select_insertUpload( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->_launch_insertUpload( $recHR ); }, $errorRE, $message);
         }
     }
 
@@ -80,20 +80,20 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
                               ],
             'results'  => [],
         });
-        my $obj = makeBamForSelect();
+        my $obj = makeBamForlaunch();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadRecord', @dbEvent );
         {
-            my $message = "_select_insertUpload fails if db returns unexpected results.";
+            my $message = "_launch_insertUpload fails if db returns unexpected results.";
             my $error1RES = 'dbUploadInsertException: Insert of new upload record failed\. Error was:';
             my $error2RES = 'Id of the upload record inserted was not retrieved\.';
             my $errorRE = qr/$error1RES\n$error2RES/m;
-            throws_ok( sub { $obj->_select_insertUpload( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->_launch_insertUpload( $recHR ); }, $errorRE, $message);
         }
     }
 }
 
-# Tests for _select_insertUploadFile()
+# Tests for _launch_insertUploadFile()
 {
     my $recHR = {
         upload_id => 21,
@@ -109,12 +109,12 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
                               ],
             'results'  => [[ 'file_id' ], [ $recHR->{file_id} ]],
         });
-        my $obj = makeBamForSelect();
+        my $obj = makeBamForlaunch();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadFileRecord', @dbEvent );
         {
-            my $message = "_select_insertUploadFile with good data works.";
-            my $got = $obj->_select_insertUploadFile( $recHR );
+            my $message = "_launch_insertUploadFile with good data works.";
+            my $got = $obj->_launch_insertUploadFile( $recHR );
             my $want = $recHR->{file_id};
             is( $got, $want, $message );
         }
@@ -122,7 +122,7 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
 
     # DB error.
     {
-        my $obj = makeBamForSelect();
+        my $obj = makeBamForlaunch();
         $obj->{'dbh'}->{mock_add_resultset} = {
             sql =>  "INSERT INTO upload_file ( upload_id, file_id)
          VALUES ( ?, ? )
@@ -131,11 +131,11 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
             failure => [ 5, 'Ooops.' ],
         };
         {
-            my $message = "_select_insertUploadFile fails if db throws error.";
+            my $message = "_launch_insertUploadFile fails if db throws error.";
             my $error1RES = 'dbUploadFileInsertException: Insert of new upload_file record failed. Error was:';
             my $error2RES = 'Ooops\.';
             my $errorRE = qr/$error1RES\n.*$error2RES/m;
-            throws_ok( sub { $obj->_select_insertUploadFile( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->_launch_insertUploadFile( $recHR ); }, $errorRE, $message);
         }
     }
 
@@ -148,20 +148,20 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
                               ],
             'results'  => [],
         });
-        my $obj = makeBamForSelect();
+        my $obj = makeBamForlaunch();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadFileRecord', @dbEvent );
         {
-            my $message = "_select_insertUploadFile fails if db returns unexpected results.";
+            my $message = "_launch_insertUploadFile fails if db returns unexpected results.";
             my $error1RES = 'dbUploadFileInsertException: Insert of new upload_file record failed\. Error was:';
             my $error2RES = 'Id of the file record linked to was not retrieved\.';
             my $errorRE = qr/$error1RES\n$error2RES/m;
-            throws_ok( sub { $obj->_select_insertUploadFile( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->_launch_insertUploadFile( $recHR ); }, $errorRE, $message);
         }
     }
 }
 
-sub makeBamForSelect {
+sub makeBamForlaunch {
 
     @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();

@@ -7,7 +7,7 @@ use Test::More 'tests' => 31;     # Main test module; run this many subtests
 
 use Bio::SeqWare::Uploads::CgHub::Bam;
 my $APP = 'upload-cghub-bam';
-my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy status-local);
+my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 status-local);
 
 # Application shebang line test. This seems excessive but added because I got
 # this wrong and the app wouldn't actually run, although all tests passed.

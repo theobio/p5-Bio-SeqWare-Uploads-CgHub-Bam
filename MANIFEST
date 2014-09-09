@@ -12,7 +12,7 @@ t/manifest.t
 t/pod-coverage.t
 t/pod.t
 t/upload-cghub-bam.t
-t/Commands/do-select.t
+t/Commands/do-launch.t
 t/Commands/do-meta-generate.t
 t/Commands/do-meta-validate.t
 t/Commands/do-meta-upload.t
