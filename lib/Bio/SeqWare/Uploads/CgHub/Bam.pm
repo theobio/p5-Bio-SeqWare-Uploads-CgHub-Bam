@@ -393,7 +393,11 @@ sub parseCli {
     my @arguments = @ARGV;
 
     $opt{'argumentsAR'} = \@arguments;
-
+    for my $key (keys %opt) {
+        if ( ! defined $opt{"$key"} ) {
+            delete $opt{"$key"};
+        }
+    }
     return \%opt;
 }
 
@@ -515,7 +519,8 @@ sub getConfigOptions {
     }
 
     my $configParser = Bio::SeqWare::Config->new( $fileName );
-    return $configParser->getAll();
+    my $optHR = $configParser->getAll();
+    return $optHR;
 }
 
 =head2 loadOptions
