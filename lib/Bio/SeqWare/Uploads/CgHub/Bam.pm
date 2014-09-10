@@ -821,7 +821,6 @@ sub setUploadStatus {
     eval {
         my $updateSTH = $dbh->prepare($updateUploadRecSQL);
         my $isOk = $updateSTH->execute( $newStatus, $upload_id );
-        my $rowHR = $updateSTH->fetchrow_hashref();
         my $updateCount = $updateSTH->rows();
         if ($updateCount != 1) {
             die "Updated " . $updateSTH->rows() . " update records, expected 1.\n";
