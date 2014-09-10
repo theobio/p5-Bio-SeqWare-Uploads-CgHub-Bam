@@ -21,12 +21,13 @@ use File::HomeDir qw(home);             # Finding the home directory is hard.
 use Data::GUID;                         # Unique uuids.
 
 # GitHub only modules
-use Bio::SeqWare::Config;   # Config file parsing.
+use Bio::SeqWare::Config;          # Config file parsing.
+use Bio::SeqWare::Db::Connection;  # Database handle generation
 
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 
 my $COMMAND_DISPATCH_HR = {
-    'select'        => \&do_select,
+    'launch'        => \&do_launch,
     'meta-generate' => \&do_meta_generate,
     'meta-validate' => \&do_meta_validate,
     'meta-upload'   => \&do_meta_upload,
@@ -117,6 +118,128 @@ sub getUuid {
     return Data::GUID->new()->as_string();
 }
 
+=head2 getErrorName
+
+    my $errorName = $CLASS->getErrorName( "SomeException: An error occured" );
+
+Extract the error or exception name from the first word in a string, assuming
+that word ends in exception or error (any case). The name is the preceeding
+part, i.e. "Some" for the string above. If no string can be determined (i.e.)
+the first word is not "*exception" or "*error", then the name will be Unknown.
+
+=cut
+
+sub getErrorName {
+    my $class = shift;
+    my $errorString = shift;
+
+    my $errorName = "Unknown";
+    if ($errorString =~ m/^([^\s]+)(Exception|Error)/i) {
+        $errorName = $1;
+    }
+
+    return $errorName;
+}
+
+=head2 ensureIsDefined
+
+    my $val = $CLASS->ensureDefined( $val, [$error] );
+
+Returns $val if it is defined, otherwise dies with $error. If $error is not
+defined, then dies with error message:
+
+    "ValidationErrorNotDefined: Expected a defined value.\n";
+
+=cut
+
+sub ensureIsDefined {
+    my $class = shift;
+    my $value = shift;
+    my $error = shift;
+    if (! defined $value) {
+        if (! defined $error) {
+            $error = "ValidationErrorNotDefined: Expected a defined value.\n"
+        }
+        die $error;
+    }
+
+    return $value
+}
+
+=head2 ensureIsntEmptyString
+
+    my $val = $CLASS->ensureIsntEmptyString( $val, [$error] );
+
+Returns $val if, stringified, it is not an empty string. Otherwise dies with
+$error. If $error is not defined, then dies with error message:
+
+    "ValidationErrorBadString: Expected a non-empty string.\n";
+
+=cut
+
+sub ensureIsntEmptyString {
+    my $class = shift;
+    my $value = shift;
+    my $error = shift;
+
+    if (! defined $value || length $value < 1) {
+        if (! defined $error) {
+            $error = "ValidationErrorBadString: Expected a non-empty string.\n";
+        }
+        die $error;
+    }
+    return $value
+}
+
+=head2 checkCompatibleHash
+
+    my $badValuesHR = checkCompatibleHash( oneHR, twoHR );
+
+Compares the two hashes to see if all common keys have the same values,
+including undefined keys. Any with values not in common are returned
+in a hash-ref pointing to an array with the values from the first and second
+hashes, respectively. Putting the smaller hash first is the most efficient
+thing to do.
+
+=cut
+
+sub checkCompatibleHash {
+    my $class   = shift;
+    my $oneHR   = shift;
+    my $twoHR   = shift;
+
+    if ( ! defined $oneHR ) {
+        return;
+    }
+    if ( ! defined $twoHR ) {
+        return;
+    }
+
+    my $bad;
+
+    for my $key (keys %$oneHR) {
+        if (exists $twoHR->{"$key"}) {
+            my $oneVal = $oneHR->{"$key"};
+            my $twoVal = $twoHR->{"$key"};
+            if (! defined $oneVal) {
+                if (! defined $twoVal) {
+                    next;
+                }
+                else {
+                    $bad->{"$key"} = [$oneVal, $twoVal];
+                }
+            }
+            elsif (! defined $twoVal) {
+                $bad->{"$key"} = [$oneVal, $twoVal];
+            }
+            elsif ( $oneVal ne $twoVal ) {
+                $bad->{"$key"} = [$oneVal, $twoVal]; 
+            }
+        }
+    }
+    return $bad;
+}
+
 =head1 INSTANCE METHODS
 
 =cut
@@ -132,7 +255,6 @@ returns 1 if succeds, or dies with an error message.
 
 sub run {
     my $self = shift;
-
     $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
     return 1;
 }
@@ -158,6 +280,7 @@ sub init {
     my $self = shift;
 
     $self->{'id'} = $CLASS->getUuid();
+    $self->{'dbh'} = undef; 
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
@@ -171,6 +294,24 @@ sub init {
     $self->sayDebug("CLI options:", $cliOptionsHR);
 
     return $self;
+}
+
+=head2 DESTROY()
+
+Called automatically upon destruction of this object. Should close the
+database handle if opened by this class. Only really matters for error
+exits. Planned exists do this manually.
+
+=cut
+
+sub DESTROY {
+    my $self = shift;
+    if ($self->{'dbh'}->{'Active'}) {
+        unless ($self->{'dbh'}->{'AutoCommit'}) {
+            $self->{'dbh'}->rollback();
+        }
+        $self->{'dbh'}->disconnect();
+    }
 }
 
 =head2 parseCli
@@ -221,6 +362,15 @@ sub parseCli {
     # Override local/config options with command line options
     GetOptions(
 
+        # Db connection options
+        'dbUser=s'     => \$opt{'dbUser'},
+        'dbPassword=s' => \$opt{'dbPassword'},
+        'dbHost=s'     => \$opt{'dbHost'},
+        'dbSchema=s'   => \$opt{'dbSchema'},
+
+        # Data options
+        'workflow_id=i' => \$opt{'workflow_id'},
+
         # Input options.
         'config=s'   => \$opt{'config'},
 
@@ -249,7 +399,7 @@ sub parseCli {
 
 =head2 parseSampleFile 
 
-    my sampleDataRecords = $self->parseSampleFile()
+    my $sampleDataRecords = $self->parseSampleFile()
 
 Read a tab delimited sample file and for each non-comment, non-blank,
 non header line, include a record of data in the returned array (ref) of
@@ -324,7 +474,12 @@ sub parseSampleFile {
         }
         my $lineHR;
         for( my $col = 0; $col < scalar @fields; $col++) {
-            $lineHR->{"$headings[$col]"} = $fields[$col];
+            if ( length ( $fields[$col] ) < 1 ) {
+                $lineHR->{"$headings[$col]"} = undef;
+            }
+            else {
+                $lineHR->{"$headings[$col]"} = $fields[$col];
+            }
         }
         push @rows, $lineHR;
 
@@ -386,6 +541,23 @@ sub loadOptions {
     $self->{'_argvAR'} = $optHR->{'argvAR'};
     $self->{'_argumentsAR'} = $optHR->{'argumentsAR'};
 
+    unless ( $optHR->{'dbUser'}    ) { croak("--dbUser option required."    ); };
+    unless ( $optHR->{'dbPassword'}) { croak("--dbPassword option required."); };
+    unless ( $optHR->{'dbHost'}    ) { croak("--dbHost option required."    ); };
+    unless ( $optHR->{'dbSchema'}  ) { croak("--dbSchema option required."  ); };
+
+    $self->{'dbUser'}     = $optHR->{'dbUser'};
+    $self->{'dbPassword'} = $optHR->{'dbPassword'};
+    $self->{'dbHost'}     = $optHR->{'dbHost'};
+    $self->{'dbSchema'}   = $optHR->{'dbSchema'};
+
+    my $val = $optHR->{'workflow_id'};
+    unless ( $val ) { croak("--workflow_id option required." ); };
+    my %okVals = ( '38' => 1, '39' => 1, '40' => 1);
+    unless (exists $okVals{$val}) { croak("--workflow_id must be 38, 39, or 40." ); };
+    $self->{'workflow_id'} = $val;
+
+    return 1;
 }
 
 =head2 loadArguments
@@ -427,14 +599,59 @@ sub loadArguments {
     return 1;
 }
 
-=head2 do_select
+=head2 do_launch
 
-Called automatically by runner framework to implement the select command.
-Not intended to be called directly.
+Called automatically by runner framework to implement the launch command.
+Not intended to be called directly. Implemets the "launch" step of the
+workflow.
+
+Uses parseSampleFile() to generate a list to upload. Each entry in this list is
+processed and upload independently as follows:
+
+1. _launch_prepareQueryInfo(): Adaptor mapping output hash from parseSampleFile
+to input hash for dbGetBamFileInfo()
+
+2. dbGetBamFileInfo() is a fairly generic query into the database given 
+a minimal hash of lookup data. It outputs a hash with a bunch of database data.
+Data in the lookup set beyond what is required for retrieval is validated
+against the database data retrieved when the keys match.
+
+3. _launch_prepareUploadInfo(): Adaptor mapping output hash from dbGetBamFileInfo
+to input hash for dbinsertUpload.
+
+4. dbinsertUpload() Inserts the upload record for the above data and returns
+the upload_id inserted.
+
+5. The upload_id is added to the data.
+
+6. dbinsertUploadFile() inserts the upoad file record 
+
+7. The upload record is marked as failed if an errors occured in 6 (Can't
+record any errors earlier as the upload record does not yet exist. Otherwise
+it is marked as done.
 
 =cut
 
-sub do_select {
+sub do_launch {
+    my $self = shift;
+    my $selectedDAT = $self->parseSampleFile();
+
+    for my $selectedHR (@$selectedDAT) {
+        my $queryHR = $self->_launch_prepareQueryInfo( $selectedHR );
+        my $seqRunDAT = $self->dbGetBamFileInfo( $queryHR );
+        my $uploadHR = $self->_launch_prepareUploadInfo($seqRunDAT);
+        my $upload_id = $self->dbInsertUpload( $uploadHR );
+        $uploadHR->{'upload_id'} = $upload_id;
+        eval {
+            $self->dbInsertUploadFile( $uploadHR );
+        };
+        if ($@) {
+            $self->setFail( $uploadHR, "launch", $@ );
+        }
+        else {
+            $self->setDone( $uploadHR, "launch" );
+        }
+    }
     return 1;
 }
 
@@ -446,6 +663,7 @@ Not intended to be called directly.
 =cut
 
 sub do_meta_generate {
+    my $self = shift;
     return 1;
 }
 
@@ -457,6 +675,7 @@ Not intended to be called directly.
 =cut
 
 sub do_meta_validate {
+    my $self = shift;
     return 1;
 }
 
@@ -468,6 +687,7 @@ Not intended to be called directly.
 =cut
 
 sub do_meta_upload {
+    my $self = shift;
     return 1;
 }
 
@@ -479,6 +699,7 @@ Not intended to be called directly.
 =cut
 
 sub do_file_upload {
+    my $self = shift;
     return 1;
 }
 
@@ -490,6 +711,7 @@ Not intended to be called directly.
 =cut
 
 sub do_status_update {
+    my $self = shift;
     return 1;
 }
 
@@ -501,6 +723,7 @@ Not intended to be called directly.
 =cut
 
 sub do_status_remote {
+    my $self = shift;
     return 1;
 }
 
@@ -512,7 +735,340 @@ Not intended to be called directly.
 =cut
 
 sub do_status_local {
+    my $self = shift;
     return 1;
+}
+
+=head2 setDone
+
+    my $self->setDone( $hashRef, $step );
+
+Simple a wrapper for setUploadStatus, returns the result of calling that with
+the "upload_id" key from the provided $hashRef and a new status of
+"$step" . "_done"
+
+=cut
+
+sub setDone {
+    my $self = shift;
+    my $uploadHR = shift;
+    my $step = shift;
+
+    return $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_done");
+}
+
+=head2 setFail
+
+    my $self->setDone( $hashRef, $step, $error );
+
+A wrapper for setUploadStatus, Calls that with the "upload_id" key from the
+provided $hashRef and a new status of
+"$step" . "_fail_" . getErrorName( $error )
+
+The $error will be return, but if an error occurs in trying to set fail, that
+error will be *prepended* to $error before returning, separated with the string
+"\tTried to fail run because of:\n"
+
+=cut
+
+sub setFail {
+    my $self = shift;
+    my $uploadHR = shift;
+    my $step = shift;
+    my $error = shift;
+
+    my $errorName = $CLASS->getErrorName($error);
+
+    eval{
+        $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
+    };
+    my $alsoError = $@;
+    if ($alsoError) {
+        $error = $alsoError . "\tTried to fail run because of:\n$error";
+    }
+    return $error;
+}
+
+
+=head2 setUploadStatus
+
+    my $self->setUploadStatus( $upload_id, $newStatus )
+
+Changes the status of the specified upload record to the specified status.
+Either returns 1 for success or dies with error.
+
+=cut
+
+sub setUploadStatus {
+    my $self = shift;
+    my $upload_id = shift;
+    my $newStatus = shift;
+
+    my $dbh = $self->getDbh();
+    my $updateUploadRecSQL =
+        "UPDATE upload SET status = ? WHERE upload_id = ?";
+
+    eval {
+        my $updateSTH = $dbh->prepare($updateUploadRecSQL);
+        my $isOk = $updateSTH->execute( $newStatus, $upload_id );
+        my $rowHR = $updateSTH->fetchrow_hashref();
+        my $updateCount = $updateSTH->rows();
+        if ($updateCount != 1) {
+            die "Updated " . $updateSTH->rows() . " update records, expected 1.\n";
+        }
+        $updateSTH->finish();
+    };
+    if ($@) {
+         die "DbStatusUpdateException: Failed to change upload record $upload_id to $newStatus.\nCleanup likely needed. Error was:\n$@\n";
+    }
+
+    return 1;
+
+}
+
+=head2 _launch_prepareQueryInfo
+
+    my $queryHR = $self->_launch_translateToQueryInfo( $parsedUploadList );
+
+Data processing step converting a hash obtained from parseSampleFile
+to that useable by dbGetBamFileInfo. Used to isolate the code mapping the
+headers from the file to columns in the database and to convert file value
+representations to those used by the database. This is ill defined and a
+potential change point.
+
+=cut
+
+sub _launch_prepareQueryInfo {
+    my $self = shift;
+    my $inHR = shift;
+
+    my %queryInfo = %$inHR;
+    $queryInfo{'lane_index' } = $inHR->{'lane'} - 1;
+    $queryInfo{'workflow_id'} = $self->{'workflow_id'};
+    if (exists $inHR->{'bam_file'}) {$queryInfo{'file_path'} = $inHR->{'bam_file'};};
+    if (exists $inHR->{'file_path'}) {$queryInfo{'file_path'} = $inHR->{'file_path'};};
+
+    return \%queryInfo
+}
+
+=head2 _launch_prepareUploadInfo
+
+    my $uploadsAR = $self->_launch_prepareUploadInfo( $queryHR );
+
+Data processing step converting a hash obtained from dbGetBamFileInfo
+to that useable by dbInsertUpload(). Used to isolate the code mapping the
+data recieved from the generic lookup routine to the specific upload
+information needed by this program in managing uploads of bam files to cghub.
+This is a potential change point.
+
+=cut
+
+sub _launch_prepareUploadInfo {
+    my $self = shift;
+    my $datHR = shift;
+
+   my %upload = (
+      'sample_id'         => $datHR->{'sample_id'},
+      'file_id'           => $datHR->{'file_id'},
+      'target'            => 'CGHUB_BAM',
+      'status'            => 'launch_running',
+      'metadata_dir'      => '/datastore/tcga/cghub/v2_uploads',
+      'cghub_analysis_id' => $CLASS->getUuid(),
+   );
+
+   return \%upload;
+}
+
+=head2 dbInsertUpload
+
+    my $upload_id = $self->dbInsertUpload( $recordHR );
+
+Inserts a new upload record. The associated upload_file record will be added
+by dbInsertUploadFile. Either succeeds or dies with error. All data for
+upload must be in the provided hash, with the keys the field names from the
+upload table.
+
+Returns the id of the upload record inserted.
+
+=cut
+
+sub dbInsertUpload {
+    my $self = shift;
+    my $rec = shift;
+    my $dbh = $self->getDbh();
+
+    my $insertUploadRecSQL =
+        "INSERT INTO upload ( sample_id, target, status, cghub_analysis_id, metadata_dir)
+         VALUES ( ?, ?, ?, ?, ? )
+         RETURNING upload_id";
+
+    my $upload_id;
+    eval {
+        my $insertSTH = $dbh->prepare($insertUploadRecSQL);
+        my $isOk = $insertSTH->execute(
+            $rec->{'sample_id'},
+            $rec->{'target'},
+            $rec->{'status'},
+            $rec->{'cghub_analysis_id'},
+            $rec->{'metadata_dir'},
+        );
+        my $rowHR = $insertSTH->fetchrow_hashref();
+        $insertSTH->finish();
+        if (! $rowHR->{'upload_id'}) {
+            die "Id of the upload record inserted was not retrieved.\n";
+        }
+        $upload_id = $rowHR->{'upload_id'};
+    };
+    if ($@) {
+         die "dbUploadInsertException: Insert of new upload record failed. Error was:\n$@\n";
+    }
+
+    return $upload_id;
+}
+
+=head2 dbInsertUploadFile
+
+    my $upload_id = $self->dbInsertUploadFile( $recordHR );
+
+Inserts a new uploadFile record. The associated upload record must already
+exist (i.e. have been inserted by dbInsertUpload). Either succeeds or
+dies with error. All data for upload-file must be in the provided hash, with
+the keys the field names from the uploadFile table.
+
+Returns the id of the file record linked to.
+
+=cut
+
+sub dbInsertUploadFile {
+    my $self = shift;
+    my $rec = shift;
+    my $dbh = $self->getDbh();
+
+    my $insertUploadFileRecSQL =
+        "INSERT INTO upload_file ( upload_id, file_id)
+         VALUES ( ?, ? )
+         RETURNING file_id";
+
+    my $file_id;
+    eval {
+        my $insertSTH = $dbh->prepare($insertUploadFileRecSQL);
+        my $isOk = $insertSTH->execute(
+            $rec->{'upload_id'},
+            $rec->{'file_id'},
+        );
+        my $rowHR = $insertSTH->fetchrow_hashref();
+        $insertSTH->finish();
+        if (! $rowHR->{'file_id'}) {
+            die "Id of the file record linked to was not retrieved.\n";
+        }
+        $file_id = $rowHR->{'file_id'};
+    };
+    if ($@) {
+         die "DbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n";
+    }
+
+    return $file_id;
+}
+
+=head2 getDbh
+
+  my $dbh = $self->getDbh();
+
+Returns a cached database handle, create and cahcing a new one first if not
+already existing. Creating requires appropriate parameters to be set and can
+fail with a "DbConnectionException:...";
+
+=cut
+
+sub getDbh {
+    my $self = shift;
+
+    if ($self->{'dbh'}) {
+        return $self->{'dbh'};
+    }
+    my $dbh;
+    my $connectionBuilder = Bio::SeqWare::Db::Connection->new( $self );
+    $dbh = $connectionBuilder->getConnection(
+         {'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1}
+    );
+    if (! defined $dbh) {
+        croak "DbConnectException: Failed to connect to the database.\n";
+    }
+
+    $self->{'dbh'} = $dbh;
+    return $dbh;
+}
+
+=head2 dbGetBamFileInfo {
+
+    $retrievedHR = $self->dbGetBamFileInfo( $lookupHR )
+
+Looks up the bam file described by $lookupHR and returns a hash-ref of
+information about it. Not very sophisticated. It requires the $lookupHR
+t contain "sample", "flowcell", "lane_index", "barcode", and "workflow_id"
+keys. If other keys are present, it will validate that retrieved
+field with the same name have the same value; any differences is a fatal error.
+
+Note that "barcode" should be undefined if looking up a non-barcoded lane, but
+the key must be provided, and that lane_index is used (0 based) not lane.
+
+=cut
+
+sub dbGetBamFileInfo {
+    my $self = shift;
+    my $recHR = shift;
+    my $dbh = $self->getDbh();
+
+    my $sample      = $CLASS->ensureIsntEmptyString( $recHR->{'sample'     }, "BadDataException: Missing sample name."   );
+    my $flowcell    = $CLASS->ensureIsntEmptyString( $recHR->{'flowcell'   }, "BadDataException: Missing flowcell name." );
+    my $lane_index  = $CLASS->ensureIsntEmptyString( $recHR->{'lane_index' }, "BadDataException: Missing lane_index."    );
+    my $workflow_id = $CLASS->ensureIsntEmptyString( $recHR->{'workflow_id'}, "BadDataException: Missing workflow_id."   );
+    my $meta_type   = 'application/bam';
+    my $type        = 'Mapsplice-sort';
+
+    # Barcode may be NULL, signaled by false value in $recHR->{'barcode'}
+    my $barcode;
+    if (! exists $recHR->{'barcode'}) {
+        die "BadDataException: Unspecified barcode.";
+    }
+    if (defined ($recHR->{'barcode'}) && $recHR->{'barcode'} eq '') {
+        die "BadDataException: Barcode must be undef, not empty sting.";
+    }
+    $barcode = $recHR->{'barcode'};
+
+    # Either select with barcode = ? or barcode is NULL
+    my $bamSelectSQL = "SELECT * FROM vw_files WHERE meta_type = ? AND type = ?
+        AND sample = ? AND flowcell = ? AND lane_index = ?
+        AND workflow_id = ?";
+    $bamSelectSQL .= $barcode ? " AND barcode = ?" : " AND barcode IS NULL";
+
+    # Either need 7 params, or 8 if barcode is NULL
+    my @bamSelectWhereParams = ( $meta_type, $type,
+        $sample, $flowcell, $lane_index, $workflow_id );
+    if ($barcode) {
+        push @bamSelectWhereParams, $barcode;
+    }
+
+    my $bamSelectSTH = $dbh->prepare( $bamSelectSQL );
+    $bamSelectSTH->execute( @bamSelectWhereParams );
+    my $rowHR = $bamSelectSTH->fetchrow_hashref();
+    my $twoFound = $bamSelectSTH->fetchrow_hashref();
+    if ($twoFound) {
+        die "DbDuplicateException: More than one record returned\n"
+        . "Query: \"$bamSelectSQL\"\n"
+        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n";
+    }
+    $bamSelectSTH->finish();
+
+    my $badKeys = $CLASS->checkCompatibleHash( $recHR, $rowHR);
+    if ($badKeys) {
+        die "DbMismatchException: Queried (1) and returned (2) hashes differ unexpectedly:\n"
+        . Dumper($badKeys) . "\n"
+        . "Query: \"$bamSelectSQL\"\n"
+        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n";
+    }
+
+    return $rowHR
 }
 
 =head2 fixupTildePath
@@ -683,7 +1239,6 @@ sub sayVerbose {
 Output text like print, but takes object option like sayVerbose and
 sayDebug.
 
-
 If the --log option is set, adds a prefix to each line of a message
 using logifyMessage.
 
@@ -691,6 +1246,7 @@ If an object parameter is passed, it will be printed on the following line.
 Normal stringification is performed, so $object can be anything, including
 another string, but if it is a hash-ref or an array ref, it will be formated
 with Data::Dumper before printing.
+
 See also sayVerbose, sayDebug.
 
 =cut

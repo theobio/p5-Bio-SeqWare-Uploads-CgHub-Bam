@@ -1,21 +1,29 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
-0.000.002 - Tag files for upload
- [ADD] - Add CLI argument extraction.
+0.000.002 - Tag files for upload - launch
  [MAJOR] - Add command processing framework.
- [ADD] - Sample file input added (as argument).
+ [MAJOR] - Database connectivity support
  [API] - Add class function getUuid(), drop object function, makeUuid().
+ [API] - Add required option workflow_id
+ [API] - Add CLI argument extraction.
+ [ADD] - Sample file argument can be specified.
+ [ADD] - Can insert upload and upload_file records.
+ [ADD] - Can update upload record to completed and failed status.
+ [ADD] - Can retrieve db information given seq-run info.
+ [ADD] - Can parse seq-run info from sample file
+ [ADD] - Change do_select to do_launch
+ [ADD] - can run do_launch command.
 
 0.000.001 - App Framework
  [MAJOR] - Initial package skeleton.
- [API] - Added new() method to create Bam object.
- [DOC} - Added basic boilerplate pod documentation.
- [API] - Add skeleton run method to Bam object.
  [MAJOR] - Add skeleton app upload-cghub-bam
+ [MAJOR] - Add config file
+ [API] - Added new() method to create Bam object.
+ [API] - Add skeleton run method to Bam object.
  [API] - Add option handling, add option --version.
  [API] - Add help output with option error, add option --help.
  [API] - Add --verbose and --debug options
  [ADD] - Amount of output varies based on --verbose and --debug
- [MAJOR] - Add config file
- [DEV] - Refactor new(); separate instantiation details into _init()
  [ADD] - Add output formatted for logging.
+ [DOC} - Added basic boilerplate pod documentation.
+ [DEV] - Refactor new(); separate instantiation details into _init()

@@ -1,5 +1,5 @@
 # Comment lines are ignored
-sample	flowcell	lane	barcode	bamFile
+sample	flowcell	lane	barcode	bam_file
 TCGA1	UNC1	6		
 TCGA2	UNC2	7	ATTCGG	
 

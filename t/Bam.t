@@ -4,13 +4,18 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 13;    # Main test module; run this many subtests
+use Test::More 'tests' => 23;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
+
+use Test::MockModule;            # Fake subroutine returns from other modules.
+use DBD::Mock;                   # Fake database results.
+use Test::MockObject::Extends;   # Fake subroutines from this module.
 
 use File::HomeDir qw(home);  # Finding the home directory is hard.
 use File::Spec;              # Generic file handling.
 
-use Bio::SeqWare::Config;    # To get default config file name
+use Bio::SeqWare::Config;          # To get default config file name
+use Bio::SeqWare::Db::Connection;  # Database handle generation, for mocking
 
 # This class tests ...
 use Bio::SeqWare::Uploads::CgHub::Bam;
@@ -18,6 +23,7 @@ my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 my $TEST_CFG = File::Spec->catfile( "t", "Data", "test with space.config" );
 my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
 my $SAMPLE_FILE = File::Spec->catfile( "t", "Data", "sampleList.txt" );
+my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 status-local);
 
 # Run these tests
 subtest( 'new()'      => \&testNew );
@@ -34,11 +40,21 @@ subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
 subtest( 'parseSampleFile()' => \&testParseSampleFile);
+subtest( 'getDbh()'  => \&testGetDbh);
+subtest( 'DESTROY()' => \&testDESTROY );
+subtest( 'setUploadStatus()' => \&testSetUploadStatus );
+subtest( 'setUDone()' => \&testSetDone );
+subtest( 'setFail()' => \&testSetFail );
+subtest( 'getErrorName()' => \&testGetErrorName );
+subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
+subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
+subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
+subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
 
 sub testNew {
     plan( tests => 2 );
 
-    @ARGV = ('status-local');
+    @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
     {
         my $message = "Returns object of correct type";
@@ -54,9 +70,449 @@ sub testNew {
     }
 }
 
+sub testDESTROY {
+    plan( tests => 3 );
+    {
+        my $message = "DESTROY dbh closed";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->disconnect();
+        $obj->{'dbh'}->{mock_can_connect} = 0;
+        undef $obj;  # Invokes DESTROY.
+        is( $obj, undef, $message);
+    }
+    {
+        my $message = "DESTROY dbh open";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        undef $obj;  # Invokes DESTROY.
+        is( $obj, undef, $message);
+    }
+    {
+        my $message = "DESTROY dbh open wth transaction";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->begin_work();
+        undef $obj;  # Invokes DESTROY.
+        is( $obj, undef, $message);
+    }
+}
+
+sub testGetDbh {
+    plan( tests => 4 );
+
+    {
+        my $message = "Returns cahced value if any";
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        my $dbh = $obj->getDbh();
+        my $got = blessed $dbh;
+        my $want = "DBI::db";
+        is( $got, $want, $message );
+    }
+
+    {
+        my $message = "Error if failes to get connection";
+        my $obj = makeBam();
+        my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
+        $module->mock( 'getConnection', sub { return undef } );
+        my $errorRE = qr/^DbConnectException: Failed to connect to the database\./;
+        throws_ok( sub { $obj->getDbh(); }, $errorRE, $message )
+    }
+
+    {
+        my $obj = makeBam();
+        my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
+        $module->mock( 'getConnection', sub { return makeMockDbh() } );
+        my $dbh = $obj->getDbh();
+        {
+             my $message = "Returns new connection when creating one";
+             my $got = blessed $dbh;
+             my $want = "DBI::db";
+             is( $got, $want, $message );
+        }
+        {
+             my $message = "Caches new connection when creating one";
+             my $dbh = $obj->{'dbh'};
+             my $got = blessed $dbh;
+             my $want = "DBI::db";
+             is( $got, $want, $message );
+        }
+    }
+}
+
+sub testSetUploadStatus {
+    plan( tests => 3 );
+
+    # valid run.
+    my $newStatus = "dummy_done";
+    my $upload_id = 21;
+    {
+        my @dbEvent = ({
+            'statement'   => qr/UPDATE upload SET status = .*/msi,
+            'bound_params' => [ $newStatus, $upload_id ],
+            'results'  => [ [ 'rows' ], [] ],
+        });
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setUploadStatus', @dbEvent );
+        {
+            my $message = "setUploadStatus with good data works.";
+            my $got = $obj->setUploadStatus( $upload_id, $newStatus );
+            my $want = 1;
+            is( $got, $want, $message );
+        }
+    }
+
+    # Bad returned results.
+    {
+        my @dbEvent = ({
+            'statement'   => qr/UPDATE upload SET status = .*/msi,
+            'bound_params' => [ $newStatus, $upload_id ],
+            'results'  => [ [ 'rows' ], ],
+        });
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'badSetUploadStatus', @dbEvent );
+        {
+            my $message = "setUploadStatus fails if db returns unexpected results.";
+            my $error1RES = 'DbStatusUpdateException: Failed to change upload record ' . $upload_id. ' to ' . $newStatus. '\.';
+            my $error2RES = 'Cleanup likely needed\. Error was:';
+            my $error3RES = 'Updated 0 update records, expected 1\.';
+            my $errorRE = qr/$error1RES\n$error2RES\n$error3RES/m;
+            throws_ok( sub { $obj->setUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
+        }
+    }
+
+    # DB error.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql => "UPDATE upload SET status = ? WHERE upload_id = ?",
+            results => DBD::Mock->NULL_RESULTSET,
+            failure => [ 5, 'Ooops.' ],
+        };
+        {
+            my $message = "setUploadStatus fails if db throws error.";
+            my $error1RES = 'DbStatusUpdateException: Failed to change upload record ' . $upload_id. ' to ' . $newStatus. '\.';
+            my $error2RES = 'Cleanup likely needed\. Error was:';
+            my $error3RES = 'Ooops\.';
+            my $errorRE = qr/$error1RES\n$error2RES\n.*$error3RES/m;
+            throws_ok( sub { $obj->setUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
+        }
+    }
+}
+
+sub testSetDone {
+    plan( tests => 1 );
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj = Test::MockObject::Extends->new( $obj );
+        $obj->mock( 'setUploadStatus', sub { shift; return (shift,shift,shift); } );
+        {
+            my $message = "Set done calls setUploadStatus correctly.";
+            my @want = (21, "dummy-status_done", undef);
+            my @got = $obj->setDone( {'upload_id' => 21}, "dummy-status" );
+            is_deeply( \@got, \@
+            want, $message);
+        }
+    }
+
+}
+
+sub testSetFail {
+    plan( tests => 4);
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj = Test::MockObject::Extends->new( $obj );
+        $obj->mock(
+            'setUploadStatus',
+            sub {
+                my $self = shift;
+                $self->{'_test_upload_id'} = shift;
+                $self->{'_test_newStatus'} = shift;
+                return 1;
+            }
+        );
+        my $upload_id = 21;
+        my $step = "dummy-status";
+        my $recHR = {'upload_id' => $upload_id, 'ignoreMe' => 'yes'};
+        my $error = "JokeException: Just kidding,\n";
+        my $retVal = $obj->setFail( $recHR, $step, $error );
+        {
+            my $message = "Set fail returns error";
+            my $got = $retVal;
+            my $want = $error;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "passed upload_id to setUploadStatus";
+            my $got = $obj->{'_test_upload_id'};
+            my $want = $upload_id;
+            is( $got, $want, $message );
+        }
+        {
+            my $message = "passed new status correctly to setUploadStatus";
+            my $got = $obj->{'_test_newStatus'};
+            my $want = "dummy-status_failed_Joke";
+            is( $got, $want, $message );
+        }
+    }
+
+    # Test cascading exception.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj = Test::MockObject::Extends->new( $obj );
+        my $dbError = "KaboomException: Ouch.\n";
+        $obj->mock( 'setUploadStatus', sub { die $dbError; } );
+        my $upload_id = 21;
+        my $step = "dummy-status";
+        my $recHR = {'upload_id' => $upload_id, 'ignoreMe' => 'yes'};
+        my $error = "JokeException: Just kidding,\n";
+        my $retVal = $obj->setFail( $recHR, $step, $error );
+        {
+            my $message = "Set fail with error returns cascade error message";
+            my $got = $retVal;
+            my $expectRE = qr/$dbError.*Tried to fail run because of:.*$error/s;
+            like( $got, $expectRE, $message );
+        }
+    }
+}
+
+sub testDbGetBamFileInfo {
+    plan( tests => 10);
+
+    # Data
+    my $sample      = "sample-name";
+    my $flowcell    = "flowcell-name";
+    my $lane_index  = 0;
+    my $workflow_id = 39;
+    my $barcode     = "AAGGTT";
+    my $meta_type   = 'application/bam';
+    my $type        = 'Mapsplice-sort';
+    my $file_path   = '/my/file/path';
+    my $file_id     = 5;
+    my $sample_id   = 20;
+
+    #Test with barcode
+    {
+        my $lookupHR = {
+            'sample' => $sample, 'flowcell' => $flowcell, 'workflow_id' => 39,
+            'lane_index' => $lane_index, 'barcode' => $barcode,
+        };
+
+        my $expectHR = {
+         'sample' => $sample, 'file_path' => $file_path, 'file_id' => $file_id,
+         'meta_type' => $meta_type, 'flowcell' => $flowcell,
+         'lane_index' => $lane_index, 'barcode' => $barcode, 'type' => $type,
+         'sample_id' => $sample_id, 'workflow_id' => $workflow_id
+        };
+
+        my @dbEvent = ({
+            'statement'   => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+            'bound_params' => [ $meta_type, $type, $sample, $flowcell, $lane_index, $workflow_id, $barcode ],
+            'results'  => [
+                [ 'sample',     'file_path', 'file_id', 'meta_type', 'flowcell',
+                  'lane_index', 'barcode',   'type',    'sample_id', 'workflow_id' ],
+                [ $sample,      $file_path,  $file_id,  $meta_type,  $flowcell,
+                  $lane_index,  $barcode,    $type,     $sample_id,  $workflow_id  ],
+            ],
+        });
+
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'dbGetBamFileInfo', @dbEvent );
+        {
+            my $message = "dbGetBamFileInfo with good data works.";
+            my $got = $obj->dbGetBamFileInfo( $lookupHR );
+            my $want = $expectHR;
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+    #Test without barcode
+    {
+        my $lookupHR = {
+            'sample' => $sample, 'flowcell' => $flowcell, 'workflow_id' => 39,
+            'lane_index' => $lane_index, 'barcode' => undef,
+        };
+        my $expectHR = {
+         'sample' => $sample, 'file_path' => $file_path, 'file_id' => $file_id,
+         'meta_type' => $meta_type, 'flowcell' => $flowcell,
+         'lane_index' => $lane_index, 'barcode' => undef, 'type' => $type,
+         'sample_id' => $sample_id, 'workflow_id' => $workflow_id
+        };
+
+        my @dbEventNoBarcode = ({
+            'statement'   => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+            'bound_params' => [ $meta_type, $type, $sample, $flowcell, $lane_index, $workflow_id  ],
+            'results'  => [
+                [ 'sample',     'file_path', 'file_id', 'meta_type', 'flowcell',
+                  'lane_index', 'barcode',   'type',    'sample_id', 'workflow_id' ],
+                [ $sample,      $file_path,  $file_id,  $meta_type,  $flowcell,
+                  $lane_index,  undef,    $type,     $sample_id,  $workflow_id  ],
+            ],
+        });
+
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'dbGetBamFileInfoNoBarcode', @dbEventNoBarcode );
+        {
+            my $message = "dbGetBamFileInfo with good data no barcodeworks.";
+            my $got = $obj->dbGetBamFileInfo( $lookupHR );
+            my $want = $expectHR;
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+    # Test fail with bad input
+    {
+        my $lookupHR = {
+            'sample' => $sample, 'flowcell' => $flowcell, 'workflow_id' => 39,
+            'lane_index' => $lane_index, 'barcode' => $barcode,
+        };
+
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        {
+            my $message = "Missing sample name";
+            my %badRec = %$lookupHR;
+            $badRec{sample} = undef;
+            my $errorRE = qr/^BadDataException: Missing sample name\./;
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
+        }
+        {
+            my $message = "Missing flowcell name";
+            my %badRec = %$lookupHR;
+            $badRec{flowcell} = '';
+            my $errorRE = qr/^BadDataException: Missing flowcell name\./;
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
+        }
+        {
+            my $message = "Missing lane_index";
+            my %badRec = %$lookupHR;
+            delete $badRec{'lane_index'};
+            my $errorRE = qr/^BadDataException: Missing lane_index\./;
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
+        }
+        {
+            my $message = "Missing workflow_id";
+            my %badRec = %$lookupHR;
+            $badRec{workflow_id} = undef;
+            my $errorRE = qr/^BadDataException: Missing workflow_id\./;
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
+        }
+        {
+            my $message = "Barcode is empty, not undefined";
+            my %badRec = %$lookupHR;
+            $badRec{barcode} = '';
+            my $errorRE = qr/^BadDataException: Barcode must be undef, not empty sting\./;
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
+        }
+        {
+            my $message = "Missing barcode";
+            my %badRec = %$lookupHR;
+            delete $badRec{'barcode'};
+            my $errorRE = qr/^BadDataException: Unspecified barcode\./;
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
+        }
+    }
+
+    # Test mismatch query/return info
+    #Test with barcode
+    {
+        my $lookupHR = {
+            'sample' => $sample, 'flowcell' => $flowcell, 'workflow_id' => 39,
+            'lane_index' => $lane_index, 'barcode' => $barcode, 'file_path' => 'BAD'
+        };
+
+        my $expectHR = {
+         'sample' => $sample, 'file_path' => $file_path, 'file_id' => $file_id,
+         'meta_type' => $meta_type, 'flowcell' => $flowcell,
+         'lane_index' => $lane_index, 'barcode' => $barcode, 'type' => $type,
+         'sample_id' => $sample_id, 'workflow_id' => $workflow_id
+        };
+
+        my @dbMismatchedEvent = ({
+            'statement'   => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+            'bound_params' => [ $meta_type, $type, $sample, $flowcell, $lane_index, $workflow_id, $barcode ],
+            'results'  => [
+                [ 'sample',     'file_path', 'file_id', 'meta_type', 'flowcell',
+                  'lane_index', 'barcode',   'type',    'sample_id', 'workflow_id' ],
+                [ $sample,      $file_path,  $file_id,  $meta_type,  $flowcell,
+                  $lane_index,  $barcode,    $type,     $sample_id,  $workflow_id  ],
+            ],
+        });
+
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'dbGetBamFileInfoMismatched', @dbMismatchedEvent );
+        {
+            my $message = "Error in dbGetBamFileInfo with mismatched query data.";
+            my $part1 = 'DbMismatchException: Queried .1. and returned .2. hashes differ unexpectedly:';
+            my $part2 = 'file_path.*BAD.*\/my\/file\/path';
+            my $part3 = 'Query:.*Parameters';
+            my $errorRE = qr/^$part1.*$part2.*$part3/s;
+            throws_ok( sub { $obj->dbGetBamFileInfo( $lookupHR ) }, $errorRE, $message);
+        }
+    }
+
+    #Die with two records retrieved.
+    {
+        my $lookupHR = {
+            'sample' => $sample, 'flowcell' => $flowcell, 'workflow_id' => 39,
+            'lane_index' => $lane_index, 'barcode' => $barcode,
+        };
+
+        my $expectHR = {
+         'sample' => $sample, 'file_path' => $file_path, 'file_id' => $file_id,
+         'meta_type' => $meta_type, 'flowcell' => $flowcell,
+         'lane_index' => $lane_index, 'barcode' => $barcode, 'type' => $type,
+         'sample_id' => $sample_id, 'workflow_id' => $workflow_id
+        };
+
+        my @dbDupEvent = ({
+            'statement'   => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+            'bound_params' => [ $meta_type, $type, $sample, $flowcell, $lane_index, $workflow_id, $barcode ],
+            'results'  => [
+                [ 'sample',     'file_path', 'file_id', 'meta_type', 'flowcell',
+                  'lane_index', 'barcode',   'type',    'sample_id', 'workflow_id' ],
+                [ $sample,      $file_path,  $file_id,  $meta_type,  $flowcell,
+                  $lane_index,  $barcode,    $type,     $sample_id,  $workflow_id  ],
+                [ $sample,      $file_path,  $file_id,  $meta_type,  $flowcell,
+                  $lane_index,  $barcode,    $type,     $sample_id,  $workflow_id  ],
+            ],
+        });
+
+        my $obj = makeBam();
+        $obj->{'dbh'} = makeMockDbh();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'getBamDupFileInfo', @dbDupEvent );
+        {
+            my $message = "dbGetBamFileInfo with duplicate return failure.";
+            my $part1 = 'DbDuplicateException: More than one record returned';
+            my $part2 = 'Query: ';
+            my $part3 = 'Parameters: ';
+            my $errorRE = qr/^$part1\n$part2.*$part3/ms;
+            throws_ok( sub { $obj->dbGetBamFileInfo( $lookupHR ) }, $errorRE, $message);
+        }
+    }
+    
+}
+
 sub testRun {
     plan( tests => 1 );
 
+    @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
     {
         my $message = "run succeeds";
@@ -72,14 +528,14 @@ sub testParseSampleFile {
 
     # Sample with bam file and headers
     {
-        @ARGV = ('status-local', "$SAMPLE_FILE_BAM");
+        @ARGV = (@DEF_CLI, "$SAMPLE_FILE_BAM");
         my $obj = $CLASS->new();
         my $sampleRecDAT = $obj->parseSampleFile();
         my $wantDAT = [
-            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '', bamFile => '' },
-            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG', bamFile => '' },
-            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG', bamFile => '/not/really' },
-            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '', bamFile => '/old/fake' },
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => undef, bam_file => undef },
+            { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG', bam_file => undef },
+            { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG', bam_file => '/not/really' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => undef, bam_file => '/old/fake' },
         ];
         {
             my $message = "Sample count correct";
@@ -115,14 +571,14 @@ sub testParseSampleFile {
 
     # Samples no header, no extra info
     {
-        @ARGV = ('status-local', "$SAMPLE_FILE");
+        @ARGV = (@DEF_CLI, "$SAMPLE_FILE");
         my $obj = $CLASS->new();
         my $sampleRecDAT = $obj->parseSampleFile();
         my $wantDAT = [
-            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => '' },
+            { sample => 'TCGA1', flowcell => 'UNC1', lane => 6, barcode => undef },
             { sample => 'TCGA2', flowcell => 'UNC2', lane => 7, barcode => 'ATTCGG' },
             { sample => 'TCGA3', flowcell => 'UNC3', lane => 8, barcode => 'ATTCGG' },
-            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => '' },
+            { sample => 'TCGA4', flowcell => 'UNC4', lane => 1, barcode => undef },
         ];
         {
             my $message = "Sample count correct";
@@ -157,7 +613,7 @@ sub testParseSampleFile {
     }
 
     {
-        @ARGV = ('status-local');
+        @ARGV = @DEF_CLI;
         my $obj = $CLASS->new();
         my $noSuchFile = $CLASS->getUuid();
         $obj->{'sampleFile'} = $noSuchFile;
@@ -169,7 +625,7 @@ sub testParseSampleFile {
     }
     {
         my $badSampleFile = File::Spec->catfile( "t", "Data", "badShortHeaderLine.txt" );
-        @ARGV = ('status-local', $badSampleFile);
+        @ARGV = (@DEF_CLI, $badSampleFile);
         my $obj = $CLASS->new();
         {
             my $message = "Exception if fewer heading fields than data fields.";
@@ -179,7 +635,7 @@ sub testParseSampleFile {
     }
     {
         my $badSampleFile = File::Spec->catfile( "t", "Data", "badShortDataLine.txt" );
-        @ARGV = ('status-local', $badSampleFile);
+        @ARGV = (@DEF_CLI, $badSampleFile);
         my $obj = $CLASS->new();
         {
             my $message = "Exception if fewer data fields than heading fields.";
@@ -189,7 +645,7 @@ sub testParseSampleFile {
     }
     {
         my $badSampleFile = File::Spec->catfile( "t", "Data", "badIncorrectHeaderLine.txt" );
-        @ARGV = ('status-local', $badSampleFile);
+        @ARGV = (@DEF_CLI, $badSampleFile);
         my $obj = $CLASS->new();
         {
             my $message = "Exception if heading line malformed.";
@@ -199,7 +655,7 @@ sub testParseSampleFile {
     }
     {
         my $badSampleFile = File::Spec->catfile( "t", "Data", "badEmptyHeaderField.txt" );
-        @ARGV = ('status-local', $badSampleFile);
+        @ARGV = (@DEF_CLI, $badSampleFile);
         my $obj = $CLASS->new();
         {
             my $message = "Exception if heading field is blank.";
@@ -209,7 +665,7 @@ sub testParseSampleFile {
     }
     {
         my $badSampleFile = File::Spec->catfile( "t", "Data", "badDuplicatedHeaderField.txt" );
-        @ARGV = ('status-local', $badSampleFile);
+        @ARGV = (@DEF_CLI, $badSampleFile);
         my $obj = $CLASS->new();
         {
             my $message = "Exception if heading field is duplicated.";
@@ -219,7 +675,7 @@ sub testParseSampleFile {
     }
     {
         my $badSampleFile = File::Spec->catfile( "t", "Data", "badNoHeaderWithExtraData.txt" );
-        @ARGV = ('status-local', $badSampleFile);
+        @ARGV = (@DEF_CLI, $badSampleFile);
         my $obj = $CLASS->new();
         {
             my $message = "Exception if no header and other than four data columns.";
@@ -230,13 +686,18 @@ sub testParseSampleFile {
 }
 
 sub testLoadOptions {
-    plan( tests => 11 );
+    plan( tests => 19 );
+
+    my %reqOpt = (
+        'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+        'dbHost' => 'host', 'dbSchema' => 'dummy', 'workflow_id' => 38
+    );
 
     # --verbose only
     {
-        @ARGV = qw(--verbose status-local);
+        @ARGV = ('--verbose', @DEF_CLI);
         my $obj = $CLASS->new();
-        my $optHR = {'verbose' => 1};
+        my $optHR = {'verbose' => 1, %reqOpt};
         $obj->loadOptions($optHR);
         {
             ok( $obj->{'verbose'}, "verbose sets verbose");
@@ -245,9 +706,9 @@ sub testLoadOptions {
     }
     # --debug only
     {
-        @ARGV = qw(--debug status-local);
+        @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
-        my $optHR = {'debug' => 1};
+        my $optHR = {'debug' => 1, %reqOpt};
         $obj->loadOptions($optHR);
         {
             ok( $obj->{'debug'}, "debug sets debug");
@@ -256,9 +717,9 @@ sub testLoadOptions {
     }
     # --verbose && --debug
     {
-        @ARGV = qw(--debug --verbose status-local);
+        @ARGV = ('--debug', '--verbose', @DEF_CLI);
         my $obj = $CLASS->new();
-        my $optHR = {'verbose' => 1, 'debug' => 1};
+        my $optHR = {'verbose' => 1, 'debug' => 1, %reqOpt};
         $obj->loadOptions($optHR);
         {
             ok( $obj->{'verbose'}, "verbose and debug sets verbose");
@@ -268,30 +729,43 @@ sub testLoadOptions {
 
     # --log
     {
-        @ARGV = qw(--log status-local);
+        @ARGV = ('--log', @DEF_CLI);
         my $obj = $CLASS->new();
-        my $optHR = { 'log' => 1 };
+        my $optHR = { 'log' => 1, %reqOpt};
         $obj->loadOptions($optHR);
         ok($obj->{'_optHR'}->{'log'}, "log set if needed.");
     }
     {
-        @ARGV = qw(status-local);
+        @ARGV = @DEF_CLI;
         my $obj = $CLASS->new();
-        $obj->loadOptions({});
+        $obj->loadOptions( \%reqOpt );
+        ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
+    }
+
+    # --workflow_id
+    {
+        @ARGV = ('--log', @DEF_CLI);
+        my $obj = $CLASS->new();
+        ok($obj->{'workflow_id'} = 38, "workflow id is set.");
+    }
+    {
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
+        $obj->loadOptions( \%reqOpt );
         ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
     }
 
     # _argvAR
     {
-        @ARGV = qw(--verbose --debug status-local);
+        @ARGV = ('--verbose', '--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
-        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug', 'status-local'], "ARGV was captured.");
+        is_deeply($obj->{'_argvAR'}, ['--verbose', '--debug', @DEF_CLI], "ARGV was captured.");
     }
 
     # _optHR
     {
-        @ARGV = qw(--debug status-local);
+        @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
         ok($obj->{'_optHR'}->{'debug'}, "optHR was captured.");
@@ -299,17 +773,76 @@ sub testLoadOptions {
 
     {
         my $message = "_argumentsAR loaded into object.";
-        @ARGV = qw(--verbose status-local);
+        @ARGV = ('--verbose', @DEF_CLI);
         my $obj = $CLASS->new();
         # loadOptions called to do this...
         is_deeply($obj->{'_argumentsAR'}, ['status-local'], $message);
     }
+
+    # Required options
+    {
+        my $message = 'Error if no --dbUser opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbPassword' => 'dummy', 'dbHost' => 'host', 'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--dbUser option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --dbPassword opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbHost' => 'host', 'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--dbPassword option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --dbHost opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--dbHost option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --dbSchema opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host'
+        };
+        my $errorRE = qr/^--dbSchema option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --workflow_id opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host',
+            'dbSchema' => 'dummy'
+        };
+        my $errorRE = qr/^--workflow_id option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if bad --workflow_id opt (41)';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host',
+            'dbSchema' => 'dummy', 'workflow_id' => 41
+        };
+        my $errorRE = qr/^--workflow_id must be 38, 39, or 40\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+
 }
 
 sub testLoadArguments {
     plan( tests => 8 );
 
-    @ARGV = ("status-local");
+    @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
     {
         my $command = "status-local";
@@ -368,18 +901,19 @@ sub testLoadArguments {
 
 sub testParseCli {
     plan( tests => 9 );
+    @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
 
     # --verbose
     {
          my $message = "--verbose flag default is unset";
-         @ARGV = qw(status-local);
+         @ARGV = @DEF_CLI;
          my $opt = $obj->parseCli();
          ok( ! $opt->{'verbose'}, $message );
     }
     {
          my $message = "--verbose flag can be set";
-         @ARGV = qw(--verbose status-local);
+         @ARGV = ('--verbose', @DEF_CLI);
          my $opt = $obj->parseCli();
          ok( $opt->{'verbose'}, $message );
     }
@@ -387,13 +921,13 @@ sub testParseCli {
     # --debug
     {
          my $message = "--debug flag default is unset";
-         @ARGV = qw(status-local);
+         @ARGV = @DEF_CLI;
          my $opt = $obj->parseCli();
          ok( ! $opt->{'debug'}, $message );
     }
     {
          my $message = "--debug flag can be set";
-         @ARGV = qw(--debug status-local);
+         @ARGV = ('--debug', @DEF_CLI);
          my $opt = $obj->parseCli();
          ok( $opt->{'debug'}, $message );
     }
@@ -401,13 +935,13 @@ sub testParseCli {
     # --log
     {
          my $message = "--log flag default is unset";
-         @ARGV = qw(status-local);
+         @ARGV = @DEF_CLI;
          my $opt = $obj->parseCli();
          ok( ! $opt->{'log'}, $message );
     }
     {
          my $message = "--log flag can be set";
-         @ARGV = qw(--log status-local);
+         @ARGV = ('--log', @DEF_CLI);
          my $opt = $obj->parseCli();
          ok( $opt->{'log'}, $message );
     }
@@ -415,20 +949,20 @@ sub testParseCli {
     # --config
     {
          my $message = "--config default is set";
-         @ARGV = qw(status-local);
+         @ARGV = @DEF_CLI;
          my $opt = $obj->parseCli();
          is( $opt->{'config'}, Bio::SeqWare::Config->getDefaultFile(), $message );
     }
     {
          my $message = "--config flag can be set";
-         @ARGV = qw(--config some/new.cfg status-local);
+         @ARGV = ('--config', 'some/new.cfg', @DEF_CLI);
          my $opt = $obj->parseCli();
          is( $opt->{'config'}, "some/new.cfg", $message );
     }
 
     {
         my $message = "key \"argumentsAR\" contains arguments";
-        @ARGV = qw(--verbose --debug status-local);
+        @ARGV = ('--verbose', '--debug', @DEF_CLI);
         my $opt = $obj->parseCli();
         is_deeply( $opt->{'argumentsAR'}, ['status-local'], $message );
     }
@@ -443,7 +977,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --debug set
     {
-        @ARGV = qw(--debug status-local);
+        @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
         my $expectRE = qr/^$text$/;
@@ -456,7 +990,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --verbose set
     {
-        @ARGV = qw(--verbose status-local);
+        @ARGV = ('--verbose', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with verbose on';
         my $expectRE = qr/^$text$/;
@@ -469,7 +1003,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --no flag set
     {
-        @ARGV = qw(status-local);
+        @ARGV = @DEF_CLI;
         my $obj = $CLASS->new();
         my $text = 'Say with no flag';
         my $expectRE = qr/^$text$/;
@@ -483,7 +1017,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is string.
     {
-        @ARGV = qw(--debug status-local);
+        @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with scalar object.';
         my $object = 'The second object';
@@ -497,7 +1031,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is hashRef.
     {
-        @ARGV = qw(--debug status-local);
+        @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with hashRef object.';
         my $object = {'key'=>'value'};
@@ -512,7 +1046,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # $object parameter is arrayRef.
     {
-        @ARGV = qw(--debug status-local);
+        @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with arrayRef object.';
         my $object = ['key', 'value'];
@@ -527,7 +1061,7 @@ sub testSayAndSayDebugAndSayVerbose {
 
     # --debug and --log set
     {
-        @ARGV = qw(--debug --log status-local);
+        @ARGV = ('--debug', '--log', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
         my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
@@ -548,7 +1082,7 @@ sub testSayAndSayDebugAndSayVerbose {
 sub testFixupTildePath {
     plan( tests => 5 );
 
-    @ARGV = qw(status-local);
+    @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
     my $home = home();
     is( $obj->fixupTildePath( "a/path/" ), "a/path/", "path without tilde" );
@@ -563,7 +1097,7 @@ sub testGetConfigOptions {
 
     # Testing with default config file
     {
-        @ARGV = qw(status-local);
+        @ARGV = @DEF_CLI;
         my $obj = $CLASS->new();
 
         my $defaultConfig = Bio::SeqWare::Config->getDefaultFile();
@@ -593,7 +1127,7 @@ sub testGetConfigOptions {
 
     # Testing with test config file
     {
-        @ARGV = ('--config', "$TEST_CFG", 'status-local');
+        @ARGV = ('--config', "$TEST_CFG", @DEF_CLI);
         my $obj = $CLASS->new();
         {
             my $message = "Test config options available";
@@ -603,6 +1137,35 @@ sub testGetConfigOptions {
             is( $got, $want, $message);
         }
     }
+}
+
+sub testGetErrorName {
+    plan( tests => 4);
+    {
+        my $message = "Exception name parsed correctly";
+        my $got = $CLASS->getErrorName( "SomeTestException: It blew up!" );
+        my $want = "SomeTest";
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "Error name parsed correctly";
+        my $got = $CLASS->getErrorName( "testerror: It blew up!" );
+        my $want = "test";
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "Nested exceptions parsed correctly";
+        my $got = $CLASS->getErrorName( "SomeTestException: It blew up! Also - BADException." );
+        my $want = "SomeTest";
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "Default Exception name";
+        my $got = $CLASS->getErrorName( "SomeTestExcepton: Spelling matters!." );
+        my $want = "Unknown";
+        is( $got, $want, $message);
+    }
+
 }
 
 sub testGetUuid {
@@ -633,11 +1196,149 @@ sub testGetTimestamp {
     }
 }
 
+sub testEnsureIsDefined {
+    plan( tests => 6);
+
+    my $testError = "FakeException: No so bad\n";
+    my $definedFalseValue = 0;
+    my $definedTrueValue = "Hello";
+    my $expectMyErrorRE = qr/^$testError/m;
+    my $expectDefaultErrorRE = qr/^ValidationErrorNotDefined: Expected a defined value\.\n/m;
+    {
+        my $message = "Returns value if defined and false with error";
+        my $got = $CLASS->ensureIsDefined( $definedFalseValue, $testError );
+        my $want = $definedFalseValue;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns value if defined and true with error";
+        my $got = $CLASS->ensureIsDefined( $definedTrueValue, $testError );
+        my $want = $definedTrueValue;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns value if defined and false without error ";
+        my $got = $CLASS->ensureIsDefined( $definedFalseValue );
+        my $want = $definedFalseValue;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns value if defined and true without error";
+        my $got = $CLASS->ensureIsDefined( $definedTrueValue );
+        my $want = $definedTrueValue;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Dies with provided message if value not defined";
+        throws_ok( sub { $CLASS->ensureIsDefined( undef, $testError ) }, $expectMyErrorRE, $message);
+    }
+    {
+        my $message = "Dies with default message if value not defined and no error.";
+        throws_ok( sub { $CLASS->ensureIsDefined( undef ) }, $expectDefaultErrorRE, $message);
+    }
+}
+
+sub testEnsureIsntEmptyString {
+    plan( tests => 8);
+
+    my $testError = "FakeException: No so bad\n";
+    my $definedFalseNotEmpty = 0;
+    my $definedNotEmpty = "Hello";
+    my $expectMyErrorRE = qr/^$testError/m;
+    my $expectDefaultErrorRE = qr/^ValidationErrorBadString: Expected a non-empty string\.\n/m;
+    {
+        my $message = "Returns value if defined and false with error";
+        my $got = $CLASS->ensureIsntEmptyString( $definedFalseNotEmpty, $testError );
+        my $want = $definedFalseNotEmpty;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns value if defined and true with error";
+        my $got = $CLASS->ensureIsntEmptyString( $definedNotEmpty, $testError );
+        my $want = $definedNotEmpty;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns value if defined and false without error ";
+        my $got = $CLASS->ensureIsntEmptyString( $definedFalseNotEmpty );
+        my $want = $definedFalseNotEmpty;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns value if defined and true without error";
+        my $got = $CLASS->ensureIsntEmptyString( $definedNotEmpty );
+        my $want = $definedNotEmpty;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Dies with provided message if value not defined";
+        throws_ok( sub { $CLASS->ensureIsntEmptyString( undef, $testError ) }, $expectMyErrorRE, $message);
+    }
+    {
+        my $message = "Dies with default message if value not defined and no error.";
+        throws_ok( sub { $CLASS->ensureIsntEmptyString( undef ) }, $expectDefaultErrorRE, $message);
+    }
+    {
+        my $message = "Dies with provided message if value is empty string";
+        throws_ok( sub { $CLASS->ensureIsntEmptyString( '', $testError ) }, $expectMyErrorRE, $message);
+    }
+    {
+        my $message = "Dies with default message if value is empty string and no error.";
+        throws_ok( sub { $CLASS->ensureIsntEmptyString( "" ) }, $expectDefaultErrorRE, $message);
+    }
+}
+
+sub testCheckCompatibleHash {
+    plan( tests => 36);
+
+    is( $CLASS->checkCompatibleHash( undef, undef ), undef );
+
+    is( $CLASS->checkCompatibleHash( undef, {}    ), undef );
+    is( $CLASS->checkCompatibleHash( {},    {}    ), undef );
+    is( $CLASS->checkCompatibleHash( {},    undef ), undef );
+
+    is( $CLASS->checkCompatibleHash( undef,  {A=>1} ), undef );
+    is( $CLASS->checkCompatibleHash( {},     {A=>1} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1}, {A=>1} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1}, undef  ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1}, {}     ), undef );
+
+    is( $CLASS->checkCompatibleHash( undef,       {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {},          {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1},      {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>1,B=>2} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, undef       ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {}          ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>1}      ), undef );
+
+    is( $CLASS->checkCompatibleHash( undef,       {A=>undef}  ), undef );
+    is( $CLASS->checkCompatibleHash( {},          {A=>undef}  ), undef );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>1},      {A=>undef}  ), {A=>[1,undef]} );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2}, {A=>undef}  ), {A=>[1,undef]} );
+    is( $CLASS->checkCompatibleHash( {A=>undef},  {A=>undef}  ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef},  undef       ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef},  {}          ), undef );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  {A=>1}      ), {A=>[undef,1]} );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>undef},  {A=>1,B=>2} ), {A=>[undef,1]} );
+
+    is( $CLASS->checkCompatibleHash( undef,           {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( {},              {A=>undef,B=>9} ), undef );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>1},          {A=>undef,B=>9} ), {A=>[1,undef]} );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>1,B=>2},     {A=>undef,B=>9} ), {A=>[1,undef],B=>[2,9]} );
+    is( $CLASS->checkCompatibleHash( {A=>undef},      {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>undef,B=>9} ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, undef           ), undef );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {}              ), undef );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>1}          ), {A=>[undef,1]} );
+    is_deeply( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>1,B=>2}     ), {A=>[undef,1],B=>[9,2]} );
+    is( $CLASS->checkCompatibleHash( {A=>undef,B=>9}, {A=>undef}      ), undef );
+
+}
+
 sub testGetLogPrefix {
     plan( tests => 1);
 
-     @ARGV = qw(status-local);
-    my $obj = $CLASS->new();
+    my $obj = makeBam();
 
     my $message = "Log prefix is formatted correctly";
     my $got = $obj->getLogPrefix();
@@ -652,8 +1353,7 @@ sub testGetLogPrefix {
 sub testLogifyMessage {
     plan( tests => 4 );
 
-    @ARGV = qw(status-local);
-    my $obj = $CLASS->new();
+    my $obj = makeBam();
     my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
     my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
     my $hostRES = '[^\s]+';
@@ -693,4 +1393,21 @@ sub testLogifyMessage {
         like($got, $expectRE, $message);
     }
 
+}
+
+sub makeBam {
+
+    @ARGV = @DEF_CLI;
+    my $obj = $CLASS->new();
+    return $obj;
+}
+
+sub makeMockDbh {
+    my $mockDbh = DBI->connect(
+        'DBI:Mock:',
+        '',
+        '',
+        { 'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1 },
+    );
+    return $mockDbh;
 }
