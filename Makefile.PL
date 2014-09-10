@@ -6,15 +6,20 @@ WriteMakefile
   'NAME' => 'Bio::SeqWare::Uploads::CgHub::Bam',
   'VERSION_FROM' => 'lib/Bio/SeqWare/Uploads/CgHub/Bam.pm',
   'PREREQ_PM' => {
+                   'DBD::Mock' => 0,
                    'Data::GUID' => 0,
                    'File::HomeDir' => 0,
                    'Test::Exception' => 0,
+                   'Test::MockModule' => 0,
                    'Test::Output' => 0
                  },
   'INSTALLDIRS' => 'site',
   'EXE_FILES' => [
                    'bin/upload-cghub-bam'
                  ],
-  'PL_FILES' => {}
+  'PL_FILES' => {},
+  'test' => {
+              'TESTS' => 't/*.t t/Commands/*.t t/Data/*.t'
+            }
 )
 ;

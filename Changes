@@ -12,7 +12,7 @@ Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
  [ADD] - Can retrieve db information given seq-run info.
  [ADD] - Can parse seq-run info from sample file
  [ADD] - Change do_select to do_launch
- [ADD] - can run do_launch command.
+ [ADD] - Implement the do_launch command.
 
 0.000.001 - App Framework
  [MAJOR] - Initial package skeleton.

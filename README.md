@@ -32,6 +32,50 @@ time. If a parameter is passed, it is assumed to be a unix epoch time (integer
 or float seconds since Unix 0). If no parameter is passed, the current time will
 be queried. Time is parsed through perl's localtime().
 
+## getUuid
+
+    my $uuid = $self->getUuid();
+
+Creates and returns a new unique string form uuid like
+"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
+
+## getErrorName
+
+    my $errorName = $CLASS->getErrorName( "SomeException: An error occured" );
+
+Extract the error or exception name from the first word in a string, assuming
+that word ends in exception or error (any case). The name is the preceeding
+part, i.e. "Some" for the string above. If no string can be determined (i.e.)
+the first word is not "\*exception" or "\*error", then the name will be Unknown.
+
+## ensureIsDefined
+
+    my $val = $CLASS->ensureDefined( $val, [$error] );
+
+Returns $val if it is defined, otherwise dies with $error. If $error is not
+defined, then dies with error message:
+
+    "ValidationErrorNotDefined: Expected a defined value.\n";
+
+## ensureIsntEmptyString
+
+    my $val = $CLASS->ensureIsntEmptyString( $val, [$error] );
+
+Returns $val if, stringified, it is not an empty string. Otherwise dies with
+$error. If $error is not defined, then dies with error message:
+
+    "ValidationErrorBadString: Expected a non-empty string.\n";
+
+## checkCompatibleHash
+
+    my $badValuesHR = checkCompatibleHash( oneHR, twoHR );
+
+Compares the two hashes to see if all common keys have the same values,
+including undefined keys. Any with values not in common are returned
+in a hash-ref pointing to an array with the values from the first and second
+hashes, respectively. Putting the smaller hash first is the most efficient
+thing to do.
+
 # INSTANCE METHODS
 
 ## run()
@@ -54,16 +98,54 @@ does the validation and sets the final state of the internal object data.
 
 Returns the fully initialized application object ready for running.
 
+## DESTROY()
+
+Called automatically upon destruction of this object. Should close the
+database handle if opened by this class. Only really matters for error
+exits. Planned exists do this manually.
+
 ## parseCli
 
     my $optHR = $obj->parseCli()
 
 Parses the options and arguments from the command line into a hashref with the
 option name as the key. Parsing is done with GetOpt::Long. Some options are
-"short-circuit" options, if given all other options are ignored (i.e. --version
-or --help). If an unknown option is provided on the command line, this will
-exit with a usage message. For options see the OPTIONS section in
-upload-cghub-bam.
+"short-circuit" options (i.e. --version or --help). When encountered all
+following options and argments will be ignored. Once all options are removed
+from the command line, what remains are arguments. The presence of an unknown
+option is an error. A stand-alone "--" prevents parsing anything following as
+options, they will be used as arguments. This allows, for example, a filename
+argument like "--config", however confusing that might be...
+
+For a list of options see the OPTIONS section in upload-cghub-bam.
+
+If no short circuit options and no parsing errors occur, will return a hash-ref
+of all options, those not found having a value of undefined (including boolean
+flags). In addition the following keys are present
+
+- "\_argvAR"
+
+    The original command line options and arguments, as an array ref.
+
+- "\_argumentsAR"
+
+    The arguments left after parsing options out of the command line, as an array ref.
+
+## parseSampleFile 
+
+    my $sampleDataRecords = $self->parseSampleFile()
+
+Read a tab delimited sample file and for each non-comment, non-blank,
+non header line, include a record of data in the returned array (ref) of
+samples. Each line in order will be represented by a hash (ref) with the keys
+'sample', 'flowcell', 'lane', and 'barcode'. If additional columns are present
+in the file, a header line is required.
+
+If a header is provided it must start with sample\\tflowcell\\tlane\\tbarcode
+This way, each record will have an entry for each column, keyed by column name.
+
+If the first line in a file looks like a header (i.e it contains the text
+'sample' and 'flowcell' in that order, than it MUST be a real header line.
 
 ## getConfigOptions
 
@@ -77,6 +159,179 @@ Returns a hash-ref of optionName => value entries.
 Will die if can't find the config file specified, or if something happens
 while parsing the config file (i.e. with Bio::Seqware::Config)
 
+## loadOptions
+
+    $self->loadOptions({ key => value, ... });
+
+Valdates and loads the provided key => value settings into the object.
+Returns nothing on success. As this does validation, it can die with lots of
+different messages. It also does cross-validation and fills in implicit options, i.e. it sets
+\--verbose if --debug was set.
+
+## loadArguments
+
+    $self->loadArguments(["arg1", "arg2"]);
+
+Valdates and loads the CLI arguments (What is left over after removing options
+up to and including a lone "--"). Returns nothing on success. As this does
+validation, it can die with lots of different messages.
+
+## do\_launch
+
+Called automatically by runner framework to implement the launch command.
+Not intended to be called directly. Implemets the "launch" step of the
+workflow.
+
+Uses parseSampleFile() to generate a list to upload. Each entry in this list is
+processed and upload independently as follows:
+
+1\. \_launch\_prepareQueryInfo(): Adaptor mapping output hash from parseSampleFile
+to input hash for dbGetBamFileInfo()
+
+2\. dbGetBamFileInfo() is a fairly generic query into the database given 
+a minimal hash of lookup data. It outputs a hash with a bunch of database data.
+Data in the lookup set beyond what is required for retrieval is validated
+against the database data retrieved when the keys match.
+
+3\. \_launch\_prepareUploadInfo(): Adaptor mapping output hash from dbGetBamFileInfo
+to input hash for dbinsertUpload.
+
+4\. dbinsertUpload() Inserts the upload record for the above data and returns
+the upload\_id inserted.
+
+5\. The upload\_id is added to the data.
+
+6\. dbinsertUploadFile() inserts the upoad file record 
+
+7\. The upload record is marked as failed if an errors occured in 6 (Can't
+record any errors earlier as the upload record does not yet exist. Otherwise
+it is marked as done.
+
+## do\_meta\_generate
+
+Called automatically by runner framework to implement the meta-generate command.
+Not intended to be called directly.
+
+## do\_meta\_validate
+
+Called automatically by runner framework to implement the meta-validate command.
+Not intended to be called directly.
+
+## do\_meta\_upload
+
+Called automatically by runner framework to implement the meta-upload command.
+Not intended to be called directly.
+
+## do\_file\_upload
+
+Called automatically by runner framework to implement the file\_upload command.
+Not intended to be called directly.
+
+## do\_status\_update
+
+Called automatically by runner framework to implement the status-update command.
+Not intended to be called directly.
+
+## do\_status\_remote
+
+Called automatically by runner framework to implement the status-remote command.
+Not intended to be called directly.
+
+## do\_status\_local
+
+Called automatically by runner framework to implement the status-local command.
+Not intended to be called directly.
+
+## setDone
+
+    my $self->setDone( $hashRef, $step );
+
+Simple a wrapper for setUploadStatus, returns the result of calling that with
+the "upload\_id" key from the provided $hashRef and a new status of
+"$step" . "\_done"
+
+## setFail
+
+    my $self->setDone( $hashRef, $step, $error );
+
+A wrapper for setUploadStatus, Calls that with the "upload\_id" key from the
+provided $hashRef and a new status of
+"$step" . "\_fail\_" . getErrorName( $error )
+
+The $error will be return, but if an error occurs in trying to set fail, that
+error will be \*prepended\* to $error before returning, separated with the string
+"\\tTried to fail run because of:\\n"
+
+## setUploadStatus
+
+    my $self->setUploadStatus( $upload_id, $newStatus )
+
+Changes the status of the specified upload record to the specified status.
+Either returns 1 for success or dies with error.
+
+## \_launch\_prepareQueryInfo
+
+    my $queryHR = $self->_launch_translateToQueryInfo( $parsedUploadList );
+
+Data processing step converting a hash obtained from parseSampleFile
+to that useable by dbGetBamFileInfo. Used to isolate the code mapping the
+headers from the file to columns in the database and to convert file value
+representations to those used by the database. This is ill defined and a
+potential change point.
+
+## \_launch\_prepareUploadInfo
+
+    my $uploadsAR = $self->_launch_prepareUploadInfo( $queryHR );
+
+Data processing step converting a hash obtained from dbGetBamFileInfo
+to that useable by dbInsertUpload(). Used to isolate the code mapping the
+data recieved from the generic lookup routine to the specific upload
+information needed by this program in managing uploads of bam files to cghub.
+This is a potential change point.
+
+## dbInsertUpload
+
+    my $upload_id = $self->dbInsertUpload( $recordHR );
+
+Inserts a new upload record. The associated upload\_file record will be added
+by dbInsertUploadFile. Either succeeds or dies with error. All data for
+upload must be in the provided hash, with the keys the field names from the
+upload table.
+
+Returns the id of the upload record inserted.
+
+## dbInsertUploadFile
+
+    my $upload_id = $self->dbInsertUploadFile( $recordHR );
+
+Inserts a new uploadFile record. The associated upload record must already
+exist (i.e. have been inserted by dbInsertUpload). Either succeeds or
+dies with error. All data for upload-file must be in the provided hash, with
+the keys the field names from the uploadFile table.
+
+Returns the id of the file record linked to.
+
+## getDbh
+
+    my $dbh = $self->getDbh();
+
+Returns a cached database handle, create and cahcing a new one first if not
+already existing. Creating requires appropriate parameters to be set and can
+fail with a "DbConnectionException:...";
+
+## dbGetBamFileInfo {
+
+    $retrievedHR = $self->dbGetBamFileInfo( $lookupHR )
+
+Looks up the bam file described by $lookupHR and returns a hash-ref of
+information about it. Not very sophisticated. It requires the $lookupHR
+t contain "sample", "flowcell", "lane\_index", "barcode", and "workflow\_id"
+keys. If other keys are present, it will validate that retrieved
+field with the same name have the same value; any differences is a fatal error.
+
+Note that "barcode" should be undefined if looking up a non-barcoded lane, but
+the key must be provided, and that lane\_index is used (0 based) not lane.
+
 ## fixupTildePath
 
     my $path = $self->fixupTildePath( $filePath );
@@ -86,15 +341,6 @@ a tilde (~) are relative to the users home directory. This is function makes
 that happen \*lexically\*. There is no validation that the output file or path
 actually makes sense. If the the input path does not begin with a ~, it is
 returned without change. Uses File::HomeDir to handle finding a home dir.
-
-## loadOptions
-
-    $self->loadOptions({ key => value, ... });
-
-Valdates and loads the provided key => value settings into the object.
-Returns nothing on success. As this does validation, it can die with lots of
-different messages. It also does cross-validation and fills in implicit options, i.e. it sets
-\--verbose if --debug was set.
 
 ## getLogPrefix
 
@@ -171,14 +417,8 @@ If an object parameter is passed, it will be printed on the following line.
 Normal stringification is performed, so $object can be anything, including
 another string, but if it is a hash-ref or an array ref, it will be formated
 with Data::Dumper before printing.
+
 See also sayVerbose, sayDebug.
-
-## makeUuid
-
-    my $uuid = $self->makeUuid();
-
-Creates and returns a new unique string form uuid like
-"A3865E1F-9267-4267-BE65-AAC7C26DE4EF".
 
 # AUTHOR
 
