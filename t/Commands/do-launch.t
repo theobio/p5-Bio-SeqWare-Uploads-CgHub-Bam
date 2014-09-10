@@ -243,7 +243,7 @@ sub test_launch_prepareUploadInfo {
 }
 
 sub test_do_launch {
-    plan( tests => 2 );
+    plan( tests => 3 );
 
     my $meta_type    = 'application/bam';
     my $type         = 'Mapsplice-sort';
@@ -395,6 +395,13 @@ sub test_do_launch {
             ok( $obj->do_launch(), $message );
         }
 
+    }
+    {
+         my $message = "Hack to catch missing file error.";
+         my $obj = makeBamForlaunch();
+         delete $obj->{'sampleFile'};
+         my $errorRE = qr/^Currently must specify the sample file to process as launch argument\./;
+         throws_ok( sub { $obj->do_launch() }, $errorRE, $message );
     }
 }
 

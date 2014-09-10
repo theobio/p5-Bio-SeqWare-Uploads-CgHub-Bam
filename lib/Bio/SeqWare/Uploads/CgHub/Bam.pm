@@ -639,6 +639,11 @@ it is marked as done.
 
 sub do_launch {
     my $self = shift;
+
+    if (! defined $self->{'sampleFile'}) {
+        croak "Currently must specify the sample file to process as launch argument.\n";
+    }
+
     my $selectedDAT = $self->parseSampleFile();
 
     for my $selectedHR (@$selectedDAT) {
