@@ -1,5 +1,8 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
+0.000.003 - Create metaData - meta-generate
+
+
 0.000.002 - Tag files for upload - launch
  [MAJOR] - Add command processing framework.
  [MAJOR] - Database connectivity support

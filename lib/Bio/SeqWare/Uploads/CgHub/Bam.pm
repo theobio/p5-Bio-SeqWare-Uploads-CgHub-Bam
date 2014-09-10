@@ -43,11 +43,11 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 =head1 VERSION
 
-Version 0.000.002
+Version 0.000.003
 
 =cut
 
-our $VERSION = '0.000002';
+our $VERSION = '0.000003';
 
 =head1 SYNOPSIS
 
@@ -1305,7 +1305,7 @@ You can install this module directly from github using cpanm
    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
    # Any specific release:
-   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.002.tar.gz
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.003.tar.gz
 
 You can also manually download a release (zipped file) from github at
 L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases>.
