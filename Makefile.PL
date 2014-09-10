@@ -11,6 +11,7 @@ WriteMakefile
                    'File::HomeDir' => 0,
                    'Test::Exception' => 0,
                    'Test::MockModule' => 0,
+                   'Test::MockObject::Extends' => 0,
                    'Test::Output' => 0,
                    'Test::Script::Run' => 0
                  },

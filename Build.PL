@@ -19,6 +19,7 @@ my $builder = Module::Build->new(
         'Test::Output'     => 0,
         'Test::MockModule' => 0,
         'DBD::Mock'        => 0,
+        'Test::MockObject::Extends' => 0,
     },
     requires => {
         'perl'          => '5.014',
