@@ -46,7 +46,7 @@ subtest( 'setUploadStatus()' => \&testSetUploadStatus );
 subtest( 'setUDone()' => \&testSetDone );
 subtest( 'setFail()' => \&testSetFail );
 subtest( 'getErrorName()' => \&testGetErrorName );
-subtest( 'getBamFileInfo()' => \&testGetBamFileInfo );
+subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
 subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
 subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
 subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
@@ -285,7 +285,7 @@ sub testSetFail {
     }
 }
 
-sub testGetBamFileInfo {
+sub testDbGetBamFileInfo {
     plan( tests => 10);
 
     # Data
@@ -328,10 +328,10 @@ sub testGetBamFileInfo {
         my $obj = makeBam();
         $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
-            DBD::Mock::Session->new( 'getBamFileInfo', @dbEvent );
+            DBD::Mock::Session->new( 'dbGetBamFileInfo', @dbEvent );
         {
-            my $message = "getBamFileInfo with good data works.";
-            my $got = $obj->getBamFileInfo( $lookupHR );
+            my $message = "dbGetBamFileInfo with good data works.";
+            my $got = $obj->dbGetBamFileInfo( $lookupHR );
             my $want = $expectHR;
             is_deeply( $got, $want, $message );
         }
@@ -364,10 +364,10 @@ sub testGetBamFileInfo {
         my $obj = makeBam();
         $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
-            DBD::Mock::Session->new( 'getBamFileInfoNoBarcode', @dbEventNoBarcode );
+            DBD::Mock::Session->new( 'dbGetBamFileInfoNoBarcode', @dbEventNoBarcode );
         {
-            my $message = "getBamFileInfo with good data no barcodeworks.";
-            my $got = $obj->getBamFileInfo( $lookupHR );
+            my $message = "dbGetBamFileInfo with good data no barcodeworks.";
+            my $got = $obj->dbGetBamFileInfo( $lookupHR );
             my $want = $expectHR;
             is_deeply( $got, $want, $message );
         }
@@ -387,42 +387,42 @@ sub testGetBamFileInfo {
             my %badRec = %$lookupHR;
             $badRec{sample} = undef;
             my $errorRE = qr/^BadDataException: Missing sample name\./;
-            throws_ok( sub {$obj->getBamFileInfo( \%badRec ) }, $errorRE, $message);
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
         }
         {
             my $message = "Missing flowcell name";
             my %badRec = %$lookupHR;
             $badRec{flowcell} = '';
             my $errorRE = qr/^BadDataException: Missing flowcell name\./;
-            throws_ok( sub {$obj->getBamFileInfo( \%badRec ) }, $errorRE, $message);
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
         }
         {
             my $message = "Missing lane_index";
             my %badRec = %$lookupHR;
             delete $badRec{'lane_index'};
             my $errorRE = qr/^BadDataException: Missing lane_index\./;
-            throws_ok( sub {$obj->getBamFileInfo( \%badRec ) }, $errorRE, $message);
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
         }
         {
             my $message = "Missing workflow_id";
             my %badRec = %$lookupHR;
             $badRec{workflow_id} = undef;
             my $errorRE = qr/^BadDataException: Missing workflow_id\./;
-            throws_ok( sub {$obj->getBamFileInfo( \%badRec ) }, $errorRE, $message);
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
         }
         {
             my $message = "Barcode is empty, not undefined";
             my %badRec = %$lookupHR;
             $badRec{barcode} = '';
             my $errorRE = qr/^BadDataException: Barcode must be undef, not empty sting\./;
-            throws_ok( sub {$obj->getBamFileInfo( \%badRec ) }, $errorRE, $message);
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
         }
         {
             my $message = "Missing barcode";
             my %badRec = %$lookupHR;
             delete $badRec{'barcode'};
             my $errorRE = qr/^BadDataException: Unspecified barcode\./;
-            throws_ok( sub {$obj->getBamFileInfo( \%badRec ) }, $errorRE, $message);
+            throws_ok( sub {$obj->dbGetBamFileInfo( \%badRec ) }, $errorRE, $message);
         }
     }
 
@@ -455,14 +455,14 @@ sub testGetBamFileInfo {
         my $obj = makeBam();
         $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
-            DBD::Mock::Session->new( 'getBamFileInfoMismatched', @dbMismatchedEvent );
+            DBD::Mock::Session->new( 'dbGetBamFileInfoMismatched', @dbMismatchedEvent );
         {
-            my $message = "Error in getBamFileInfo with mismatched query data.";
+            my $message = "Error in dbGetBamFileInfo with mismatched query data.";
             my $part1 = 'DbMismatchException: Queried .1. and returned .2. hashes differ unexpectedly:';
             my $part2 = 'file_path.*BAD.*\/my\/file\/path';
             my $part3 = 'Query:.*Parameters';
             my $errorRE = qr/^$part1.*$part2.*$part3/s;
-            throws_ok( sub { $obj->getBamFileInfo( $lookupHR ) }, $errorRE, $message);
+            throws_ok( sub { $obj->dbGetBamFileInfo( $lookupHR ) }, $errorRE, $message);
         }
     }
 
@@ -498,12 +498,12 @@ sub testGetBamFileInfo {
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'getBamDupFileInfo', @dbDupEvent );
         {
-            my $message = "getBamFileInfo with duplicate return failure.";
+            my $message = "dbGetBamFileInfo with duplicate return failure.";
             my $part1 = 'DbDuplicateException: More than one record returned';
             my $part2 = 'Query: ';
             my $part3 = 'Parameters: ';
             my $errorRE = qr/^$part1\n$part2.*$part3/ms;
-            throws_ok( sub { $obj->getBamFileInfo( $lookupHR ) }, $errorRE, $message);
+            throws_ok( sub { $obj->dbGetBamFileInfo( $lookupHR ) }, $errorRE, $message);
         }
     }
     

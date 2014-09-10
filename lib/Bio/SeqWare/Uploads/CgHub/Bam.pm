@@ -628,26 +628,29 @@ the upload_id inserted.
 
 7. The upload record is marked as failed if an errors occured in 6 (Can't
 record any errors earlier as the upload record does not yet exist. Otherwise
-it is marked as completed.
+it is marked as done.
 
 =cut
 
 sub do_launch {
     my $self = shift;
     my $selectedDAT = $self->parseSampleFile();
+
     for my $selectedHR (@$selectedDAT) {
         my $queryHR = $self->_launch_prepareQueryInfo( $selectedHR );
         my $seqRunDAT = $self->dbGetBamFileInfo( $queryHR );
         my $uploadHR = $self->_launch_prepareUploadInfo($seqRunDAT);
-        my $upload_id = $self->dbinsertUpload( $uploadHR );
+        my $upload_id = $self->dbInsertUpload( $uploadHR );
         $uploadHR->{'upload_id'} = $upload_id;
         eval {
-            $self->dbinsertUploadFile( $uploadHR );
+            $self->dbInsertUploadFile( $uploadHR );
         };
         if ($@) {
             $self->setFail( $uploadHR, "launch", $@ );
         }
-        $self->setDone( $uploadHR, "launch" );
+        else {
+            $self->setDone( $uploadHR, "launch" );
+        }
     }
     return 1;
 }
@@ -802,7 +805,6 @@ sub setUploadStatus {
     my $newStatus = shift;
 
     my $dbh = $self->getDbh();
-
     my $updateUploadRecSQL =
         "UPDATE upload SET status = ? WHERE upload_id = ?";
 
@@ -829,7 +831,7 @@ sub setUploadStatus {
     my $queryHR = $self->_launch_translateToQueryInfo( $parsedUploadList );
 
 Data processing step converting a hash obtained from parseSampleFile
-to that useable by getBamFileInfo. Used to isolate the code mapping the
+to that useable by dbGetBamFileInfo. Used to isolate the code mapping the
 headers from the file to columns in the database and to convert file value
 representations to those used by the database. This is ill defined and a
 potential change point.
@@ -853,7 +855,7 @@ sub _launch_prepareQueryInfo {
 
     my $uploadsAR = $self->_launch_prepareUploadInfo( $queryHR );
 
-Data processing step converting a hash obtained from getBamFileInfo
+Data processing step converting a hash obtained from dbGetBamFileInfo
 to that useable by dbInsertUpload(). Used to isolate the code mapping the
 data recieved from the generic lookup routine to the specific upload
 information needed by this program in managing uploads of bam files to cghub.
@@ -877,12 +879,12 @@ sub _launch_prepareUploadInfo {
    return \%upload;
 }
 
-=head2 _launch_insertUpload
+=head2 dbInsertUpload
 
-    my $upload_id = $self->_launch_insertUpload( $recordHR );
+    my $upload_id = $self->dbInsertUpload( $recordHR );
 
 Inserts a new upload record. The associated upload_file record will be added
-by _launch_insertUploadFile. Either succeeds or dies with error. All data for
+by dbInsertUploadFile. Either succeeds or dies with error. All data for
 upload must be in the provided hash, with the keys the field names from the
 upload table.
 
@@ -890,7 +892,7 @@ Returns the id of the upload record inserted.
 
 =cut
 
-sub _launch_insertUpload {
+sub dbInsertUpload {
     my $self = shift;
     my $rec = shift;
     my $dbh = $self->getDbh();
@@ -924,12 +926,12 @@ sub _launch_insertUpload {
     return $upload_id;
 }
 
-=head2 _launch_insertUploadFile
+=head2 dbInsertUploadFile
 
-    my $upload_id = $self->_launch_insertUploadFile( $recordHR );
+    my $upload_id = $self->dbInsertUploadFile( $recordHR );
 
 Inserts a new uploadFile record. The associated upload record must already
-exist (i.e. have been inserted by _launch_insertUpload). Either succeeds or
+exist (i.e. have been inserted by dbInsertUpload). Either succeeds or
 dies with error. All data for upload-file must be in the provided hash, with
 the keys the field names from the uploadFile table.
 
@@ -937,7 +939,7 @@ Returns the id of the file record linked to.
 
 =cut
 
-sub _launch_insertUploadFile {
+sub dbInsertUploadFile {
     my $self = shift;
     my $rec = shift;
     my $dbh = $self->getDbh();
@@ -962,7 +964,7 @@ sub _launch_insertUploadFile {
         $file_id = $rowHR->{'file_id'};
     };
     if ($@) {
-         die "dbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n";
+         die "DbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n";
     }
 
     return $file_id;
@@ -997,9 +999,9 @@ sub getDbh {
     return $dbh;
 }
 
-=head2 getBamFileInfo {
+=head2 dbGetBamFileInfo {
 
-    $retrievedHR = $self->getBamFileInfo( $lookupHR )
+    $retrievedHR = $self->dbGetBamFileInfo( $lookupHR )
 
 Looks up the bam file described by $lookupHR and returns a hash-ref of
 information about it. Not very sophisticated. It requires the $lookupHR
@@ -1012,7 +1014,7 @@ the key must be provided, and that lane_index is used (0 based) not lane.
 
 =cut
 
-sub getBamFileInfo {
+sub dbGetBamFileInfo {
     my $self = shift;
     my $recHR = shift;
     my $dbh = $self->getDbh();

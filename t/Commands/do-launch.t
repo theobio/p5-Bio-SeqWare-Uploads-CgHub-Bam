@@ -3,9 +3,10 @@ use 5.014;
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More 'tests' => 13;     # Main test module; run this many tests
+use Test::More 'tests' => 5;     # Main test module; run this many tests
 use Test::Exception;
 use DBD::Mock;                   # Fake database results
+use Test::MockModule;
 use File::Spec;              # Generic file handling.
 use Data::Dumper;
 
@@ -16,9 +17,15 @@ my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
 my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 launch ), $SAMPLE_FILE_BAM);
 
+subtest( 'dbInsertUpload()'      => \&testDbInsertUpload );
+subtest( 'dbInsertUploadFile()'  => \&testDbInsertUploadFile );
+subtest( '_launch_prepareQueryInfo()'  => \&test_launch_prepareQueryInfo );
+subtest( '_launch_prepareUploadInfo()' => \&test_launch_prepareUploadInfo );
+subtest( 'do_launch()'                 => \&test_do_launch );
 
-# Tests for _launch_insertUpload()
-{
+sub testDbInsertUpload{
+    plan( tests => 3 );
+
     my $mockUploadId = 21;
     my $recHR = {
         sample_id => 19,
@@ -43,8 +50,8 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadRecord', @dbEvent );
         {
-            my $message = "_launch_insertUpload with good data works.";
-            my $got = $obj->_launch_insertUpload( $recHR );
+            my $message = "dbInsertUpload with good data works.";
+            my $got = $obj->dbInsertUpload( $recHR );
             my $want = $mockUploadId;
             is( $got, $want, $message );
         }
@@ -61,11 +68,11 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
             failure => [ 5, 'Ooops.' ],
         };
         {
-            my $message = "_launch_insertUpload fails if db throws error.";
+            my $message = "dbInsertUpload fails if db throws error.";
             my $error1RES = 'dbUploadInsertException: Insert of new upload record failed\. Error was:';
             my $error2RES = 'Ooops\.';
             my $errorRE = qr/$error1RES\n.*$error2RES/m;
-            throws_ok( sub { $obj->_launch_insertUpload( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->dbInsertUpload( $recHR ); }, $errorRE, $message);
         }
     }
 
@@ -85,21 +92,19 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadRecord', @dbEvent );
         {
-            my $message = "_launch_insertUpload fails if db returns unexpected results.";
+            my $message = "dbInsertUpload fails if db returns unexpected results.";
             my $error1RES = 'dbUploadInsertException: Insert of new upload record failed\. Error was:';
             my $error2RES = 'Id of the upload record inserted was not retrieved\.';
             my $errorRE = qr/$error1RES\n$error2RES/m;
-            throws_ok( sub { $obj->_launch_insertUpload( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->dbInsertUpload( $recHR ); }, $errorRE, $message);
         }
     }
 }
 
-# Tests for _launch_insertUploadFile()
-{
-    my $recHR = {
-        upload_id => 21,
-        file_id => 5,
-    };
+sub testDbInsertUploadFile{
+     plan( tests => 3 );
+
+    my $recHR = { upload_id => 21, file_id => 5 };
 
     # valid run.
     {
@@ -114,8 +119,8 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadFileRecord', @dbEvent );
         {
-            my $message = "_launch_insertUploadFile with good data works.";
-            my $got = $obj->_launch_insertUploadFile( $recHR );
+            my $message = "dbInsertUploadFile with good data works.";
+            my $got = $obj->dbInsertUploadFile( $recHR );
             my $want = $recHR->{file_id};
             is( $got, $want, $message );
         }
@@ -132,11 +137,11 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
             failure => [ 5, 'Ooops.' ],
         };
         {
-            my $message = "_launch_insertUploadFile fails if db throws error.";
-            my $error1RES = 'dbUploadFileInsertException: Insert of new upload_file record failed. Error was:';
+            my $message = "dbInsertUploadFile fails if db throws error.";
+            my $error1RES = 'DbUploadFileInsertException: Insert of new upload_file record failed. Error was:';
             my $error2RES = 'Ooops\.';
             my $errorRE = qr/$error1RES\n.*$error2RES/m;
-            throws_ok( sub { $obj->_launch_insertUploadFile( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->dbInsertUploadFile( $recHR ); }, $errorRE, $message);
         }
     }
 
@@ -153,17 +158,18 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'newUploadFileRecord', @dbEvent );
         {
-            my $message = "_launch_insertUploadFile fails if db returns unexpected results.";
-            my $error1RES = 'dbUploadFileInsertException: Insert of new upload_file record failed\. Error was:';
+            my $message = "dbInsertUploadFile fails if db returns unexpected results.";
+            my $error1RES = 'DbUploadFileInsertException: Insert of new upload_file record failed\. Error was:';
             my $error2RES = 'Id of the file record linked to was not retrieved\.';
             my $errorRE = qr/$error1RES\n$error2RES/m;
-            throws_ok( sub { $obj->_launch_insertUploadFile( $recHR ); }, $errorRE, $message);
+            throws_ok( sub { $obj->dbInsertUploadFile( $recHR ); }, $errorRE, $message);
         }
     }
 }
 
-# Testing _launch_prepareQueryInfo
-{
+sub test_launch_prepareQueryInfo {
+    plan( tests => 5 );
+
     my $obj = makeBamForlaunch();
     my $inputDAT = $obj->parseSampleFile();
     {
@@ -211,12 +217,12 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
              'lane' => 1, 'lane_index' => 0, 'barcode' => undef,
              'file_path' => '/old/fake', 'bam_file' => '/old/fake' };
         is_deeply( $got, $want, $message);
-        
     }
 }
 
-# Testing _launch_prepareUploadInfo
-{
+sub test_launch_prepareUploadInfo {
+    plan( tests => 2 );
+
     my $obj = makeBamForlaunch();
     my $inputHR = { 'sample_id' => 19, 'file_id' => 5,
              'lane_index' => 0, 'barcode' => 'ATGATG', 'file_path' => '/old/fake'  };
@@ -235,6 +241,164 @@ my @DEF_CLI = (qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema du
         is_deeply( \%got, \%want, $message)
     }
 }
+
+sub test_do_launch {
+    plan( tests => 2 );
+
+    my $meta_type    = 'application/bam';
+    my $type         = 'Mapsplice-sort';
+
+    my $target            = 'CGHUB_BAM';
+    my $status            = 'launch_running';
+    my $metadata_dir      = '/datastore/tcga/cghub/v2_uploads';
+    my $cghub_analysis_id = '00000000-0000-0000-0000-000000000000';
+
+    my $dbEvent_dbGetBamFileInfo_Line1 = {
+        'statement'    => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+        'bound_params' => [ $meta_type, $type, 'TCGA1', 'UNC1', 5, 38 ],
+        'results'      => [
+            [ 'sample', 'file_path', 'file_id', 'meta_type', 'flowcell', 'lane_index', 'barcode', 'type', 'sample_id', 'workflow_id' ],
+            [ 'TCGA1',  undef, 5, $meta_type, 'UNC1', 5, undef, $type, 19, 38 ],
+         ],
+    };
+    my $dbEvent_dbGetBamFileInfo_Line2 = {
+        'statement'    => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+        'bound_params' => [ $meta_type, $type, 'TCGA2', 'UNC2', 6, 38, 'ATTCGG' ],
+        'results'      => [
+            [ 'sample', 'file_path', 'file_id', 'meta_type', 'flowcell', 'lane_index', 'barcode', 'type', 'sample_id', 'workflow_id' ],
+            [ 'TCGA2',  undef, 6, $meta_type, 'UNC2', 6, 'ATTCGG', $type, 20, 38 ],
+         ],
+    };
+    my $dbEvent_dbGetBamFileInfo_Line3 = {
+        'statement'    => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+        'bound_params' => [ $meta_type, $type, 'TCGA3', 'UNC3', 7, 38, 'ATTCGG' ],
+        'results'      => [
+            [ 'sample', 'file_path', 'file_id', 'meta_type', 'flowcell', 'lane_index', 'barcode', 'type', 'sample_id', 'workflow_id' ],
+            [ 'TCGA3',  '/not/really', 7, $meta_type, 'UNC3', 7, 'ATTCGG', $type, 21, 38 ],
+         ],
+    };
+    my $dbEvent_dbGetBamFileInfo_Line4 = {
+        'statement'    => qr/SELECT \* FROM vw_files WHERE meta_type = .*/msi,
+        'bound_params' => [ $meta_type, $type, 'TCGA4', 'UNC4', 0, 38 ],
+        'results'      => [
+            [ 'sample', 'file_path', 'file_id', 'meta_type', 'flowcell', 'lane_index', 'barcode', 'type', 'sample_id', 'workflow_id' ],
+            [ 'TCGA4',  '/old/fake', 8, $meta_type, 'UNC4', 0, undef, $type, 22, 38 ],
+         ],
+    };
+
+    my $dbEvent_InsertUpload_Line1 = {
+        'statement'    => qr/INSERT INTO upload.*/msi,
+        'bound_params' => [ 19, $target, $status, $cghub_analysis_id, $metadata_dir],
+        'results'      => [[ 'upload_id' ], [ 121 ]],
+    };
+    my $dbEvent_InsertUpload_Line2 = {
+        'statement'    => qr/INSERT INTO upload.*/msi,
+        'bound_params' => [ 20, $target, $status, $cghub_analysis_id, $metadata_dir],
+        'results'      => [[ 'upload_id' ], [ 122 ]],
+    };
+    my $dbEvent_InsertUpload_Line3 = {
+        'statement'    => qr/INSERT INTO upload.*/msi,
+        'bound_params' => [ 21, $target, $status, $cghub_analysis_id, $metadata_dir],
+        'results'      => [[ 'upload_id' ], [ 123 ]],
+    };
+    my $dbEvent_InsertUpload_Line4 = {
+        'statement'    => qr/INSERT INTO upload.*/msi,
+        'bound_params' => [ 22, $target, $status, $cghub_analysis_id, $metadata_dir],
+        'results'      => [[ 'upload_id' ], [ 124 ]],
+    };
+
+    my $dbEvent_InsertUploadFile_Line1 = {
+        'statement'    => qr/INSERT INTO upload_file.*/msi,
+        'bound_params' => [ 121, 5 ],
+        'results'  => [[ 'file_id' ], [ 5 ]],
+    };
+    my $dbEvent_InsertUploadFile_Line2 = {
+        'statement'    => qr/INSERT INTO upload_file.*/msi,
+        'bound_params' => [ 122, 6 ],
+        'results'  => [[ 'file_id' ], [ 6 ]],
+    };
+    my $dbEvent_InsertUploadFile_Line3 = {
+        'statement'    => qr/INSERT INTO upload_file.*/msi,
+        'bound_params' => [ 123, 7 ],
+        'results'  => [[ 'file_id' ], [ 7 ]],
+    };
+    my $dbEvent_InsertUploadFile_Line4 = {
+        'statement'    => qr/INSERT INTO upload_file.*/msi,
+        'bound_params' => [ 124, 8 ],
+        'results'  => [[ 'file_id' ], [ 8 ]],
+    };
+    my $dbEvent_UpdateUpload_line1 = {
+        'statement'   => qr/UPDATE upload SET status = .*/msi,
+        'bound_params' => [ 'launch_done', 121 ],
+        'results'  => [ [ 'rows' ], [] ],
+    };
+    my $dbEvent_UpdateUpload_line2 = {
+        'statement'   => qr/UPDATE upload SET status = .*/msi,
+        'bound_params' => [ 'launch_done', 122 ],
+        'results'  => [ [ 'rows' ], [] ],
+    };
+    my $dbEvent_UpdateUpload_line3 = {
+        'statement'   => qr/UPDATE upload SET status = .*/msi,
+        'bound_params' => [ 'launch_done', 123 ],
+        'results'  => [ [ 'rows' ], [] ],
+    };
+    my $dbEvent_UpdateUpload_line4 = {
+        'statement'   => qr/UPDATE upload SET status = .*/msi,
+        'bound_params' => [ 'launch_done', 124 ],
+        'results'  => [ [ 'rows' ], [] ],
+    };
+    {
+        my @dbLaunchEvents = (
+            $dbEvent_dbGetBamFileInfo_Line1, $dbEvent_InsertUpload_Line1, $dbEvent_InsertUploadFile_Line1, $dbEvent_UpdateUpload_line1,
+            $dbEvent_dbGetBamFileInfo_Line2, $dbEvent_InsertUpload_Line2, $dbEvent_InsertUploadFile_Line2, $dbEvent_UpdateUpload_line2,
+            $dbEvent_dbGetBamFileInfo_Line3, $dbEvent_InsertUpload_Line3, $dbEvent_InsertUploadFile_Line3, $dbEvent_UpdateUpload_line3,
+            $dbEvent_dbGetBamFileInfo_Line4, $dbEvent_InsertUpload_Line4, $dbEvent_InsertUploadFile_Line4, $dbEvent_UpdateUpload_line4
+        );
+
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('getUuid', sub { '00000000-0000-0000-0000-000000000000'; } );
+        my $obj = makeBamForlaunch();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'do_launch', @dbLaunchEvents );
+        {
+            my $message = "do_launch with good data top down test.";
+            ok( $obj->do_launch(), $message );
+        }
+    }
+    {
+        my $dbEvent_InsertUploadFileFail_Line1 = {
+            'statement'    => qr/INSERT INTO upload_file.*/msi,
+            'bound_params' => [ 121, 5 ],
+            'results'  => [],
+        };
+        my $dbEvent_UpdateUploadFail_line1 = {
+            'statement'   => qr/UPDATE upload SET status = .*/msi,
+            'bound_params' => [ 'launch_failed_DbStatusUpdateException', 121 ],
+            'results'  => [ [ 'rows' ], [] ],
+        };
+
+        my @dbLaunchFailEvent = (
+            $dbEvent_dbGetBamFileInfo_Line1, $dbEvent_InsertUpload_Line1,
+            $dbEvent_InsertUploadFileFail_Line1,
+            $dbEvent_dbGetBamFileInfo_Line2, $dbEvent_InsertUpload_Line2, $dbEvent_InsertUploadFile_Line2, $dbEvent_UpdateUpload_line2,
+            $dbEvent_dbGetBamFileInfo_Line3, $dbEvent_InsertUpload_Line3, $dbEvent_InsertUploadFile_Line3, $dbEvent_UpdateUpload_line3,
+            $dbEvent_dbGetBamFileInfo_Line4, $dbEvent_InsertUpload_Line4, $dbEvent_InsertUploadFile_Line4, $dbEvent_UpdateUpload_line4
+            
+        );
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('getUuid', sub { '00000000-0000-0000-0000-000000000000'; } );
+        my $obj = makeBamForlaunch();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'do_launchFail', @dbLaunchFailEvent );
+        {
+            my $message = "do_launch with fail triggering update to launch_failed";
+            ok( $obj->do_launch(), $message );
+        }
+
+    }
+}
+
+# Data providers
 
 sub makeBamForlaunch {
 
