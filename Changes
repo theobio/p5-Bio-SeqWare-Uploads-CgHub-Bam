@@ -1,6 +1,9 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
 0.000.003 - Create metaData - meta-generate
+ [ADD] Added setRunning, finds next command to run
+ [ADD] Modified error handling to clean up db handle on crash
+ [ADD] Modified run to be top-level error handler, and log.
 
 
 0.000.002 - Tag files for upload - launch

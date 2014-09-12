@@ -15,6 +15,7 @@ use Pod::Usage;    # Usage messages for --help and option errors.
 use File::Spec::Functions qw(catfile);  # Generic file handling.
 use IO::File ;     # File io using variables as fileHandles.
                    # Note: no errors on open failure.
+use Scalar::Util qw( blessed );  # Get class of objects
 
 # Cpan modules
 use File::HomeDir qw(home);             # Finding the home directory is hard.
@@ -249,13 +250,21 @@ sub checkCompatibleHash {
     $obj->run()
 
 Implements the actions taken when run as an application. Currently only
-returns 1 if succeds, or dies with an error message.
+returns 1 if succeds, or prints error and returns 0 if something dies with
+an error message.
 
 =cut
 
 sub run {
     my $self = shift;
-    $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
+    eval {
+        $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
+    };
+    if ($@) {
+        my $error = $@;
+        $self->sayError( $error );
+        return 0;
+    }
     return 1;
 }
 
@@ -306,7 +315,7 @@ exits. Planned exists do this manually.
 
 sub DESTROY {
     my $self = shift;
-    if ($self->{'dbh'}->{'Active'}) {
+    if ($self->{'dbh'} && $self->{'dbh'}->{'Active'}) {
         unless ($self->{'dbh'}->{'AutoCommit'}) {
             $self->{'dbh'}->rollback();
         }
@@ -656,6 +665,7 @@ sub do_launch {
             $self->dbInsertUploadFile( $uploadHR );
         };
         if ($@) {
+            my $error = $@;
             $self->setFail( $uploadHR, "launch", $@ );
         }
         else {
@@ -799,6 +809,59 @@ sub setFail {
     return $error;
 }
 
+=head2 dbSetRunning
+
+   my $uploadRec = dbSetRunning( $stepDone, $stepRunning )
+
+Given the previous step and the next step, finds one record in the database
+in state <$stepDone>_done, sets its status to <$stepRunning>_running, and
+returns the equivqalent hash-ref. This is done in a transaction so it is safe
+to run these steps overlapping each other.
+
+=cut
+
+sub dbSetRunning {
+    my $self = shift;
+    my $stepDone = shift;
+    my $stepRunning = shift;
+
+
+    $stepDone = $stepDone . "_done";
+    $stepRunning = $stepRunning . "_running";
+    my $dbh = $self->getDbh();
+
+    my $selectRunSQL = "SELECT * FROM upload WHERE status = ?
+        ORDER BY upload_id DESC LIMIT 1";
+
+    my $selectRun = $dbh->prepare( $selectRunSQL );
+
+    my $uploadRecHR;
+
+    eval {
+        # Transaction to ensures 'find' and 'tag as found' occur in one step,
+        # allowing for parallel running.
+        $dbh->begin_work();
+        $dbh->do("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+        $selectRun->execute( $stepDone );
+        my $rowHR = $selectRun->fetchrow_hashref();
+        $selectRun->finish();
+        if (! exists $rowHR->{'upload_id'}) {
+
+            say('Nothing to do.');
+        }
+        else {
+            $self->setUploadStatus( $rowHR->{ 'upload_id' }, $stepRunning );
+            $uploadRecHR = \%$rowHR;
+            $uploadRecHR->{'status'} = $stepRunning;
+        }
+        $dbh->commit();
+    };
+    my $error = $@;
+    if ($error) {
+        $self->dbDie("DbSetRunningException: Failed to select lane to run because of:\n$error\n");
+    }
+    return $uploadRecHR;
+}
 
 =head2 setUploadStatus
 
@@ -822,13 +885,14 @@ sub setUploadStatus {
         my $updateSTH = $dbh->prepare($updateUploadRecSQL);
         my $isOk = $updateSTH->execute( $newStatus, $upload_id );
         my $updateCount = $updateSTH->rows();
-        if ($updateCount != 1) {
-            die "Updated " . $updateSTH->rows() . " update records, expected 1.\n";
-        }
         $updateSTH->finish();
+        if ($updateCount != 1) {
+            #Not db die, that is caught on outer loop.
+            die( "Updated " . $updateCount . " update records, expected 1.\n");
+        }
     };
     if ($@) {
-         die "DbStatusUpdateException: Failed to change upload record $upload_id to $newStatus.\nCleanup likely needed. Error was:\n$@\n";
+        $self->dbDie( "DbStatusUpdateException: Failed to change upload record $upload_id to $newStatus.\nCleanup likely needed. Error was:\n$@\n");
     }
 
     return 1;
@@ -924,15 +988,61 @@ sub dbInsertUpload {
         my $rowHR = $insertSTH->fetchrow_hashref();
         $insertSTH->finish();
         if (! $rowHR->{'upload_id'}) {
-            die "Id of the upload record inserted was not retrieved.\n";
+            $self->dbDie( "Id of the upload record inserted was not retrieved.\n" );
         }
         $upload_id = $rowHR->{'upload_id'};
     };
     if ($@) {
-         die "dbUploadInsertException: Insert of new upload record failed. Error was:\n$@\n";
+         my $error = $@;
+         $self->dbDie("dbUploadInsertException: Insert of new upload record failed. Error was:\n$error\n");
     }
 
     return $upload_id;
+}
+
+=head2 dbDie
+
+   $self->dbDie( $errorMessage );
+
+Call to die due to a database error. Wraps a call to die with code to clean up
+the database connection, rolling back any open transaction and closing and 
+destroying the current database connection object.
+
+It will check if a transaction was not finished and do a rollback, If that
+was tried and failed, the error message will be appended with:
+"Also:\n\tRollback failed because of:\n$rollbackError", where $rollbackError
+is the error caught during the attmptedrollback.
+
+All errors during disconnect are ignored.
+
+If the error thrown by dbDie is caught and handled, a new call to getDbh
+will be needed as the old connection is no more.
+
+=cut
+
+sub dbDie {
+
+    my $self = shift;
+    my $error = shift;
+    if ($self->{'dbh'}) {
+        if ($self->{'dbh'}->{'Active'}) {
+             unless ($self->{'dbh'}->{'AutoCommit'}) {
+                 eval {
+                     $self->{'dbh'}->rollback();
+                     if ($self->{'verbose'}) {
+                         $error .= "\n\tRollback was performed.\n";
+                     }
+                 };
+                 if ($@) {
+                     $error .= "\n\tAlso: DbRollbackException: Rollback failed because of:\n$@";
+                 }
+             }
+        }
+        eval { $self->{'dbh'}->disconnect(); };
+        # Ignore disconnect errors!
+        $self->{'dbh'} = undef;
+    }
+    die $error;
 }
 
 =head2 dbInsertUploadFile
@@ -968,12 +1078,12 @@ sub dbInsertUploadFile {
         my $rowHR = $insertSTH->fetchrow_hashref();
         $insertSTH->finish();
         if (! $rowHR->{'file_id'}) {
-            die "Id of the file record linked to was not retrieved.\n";
+            $self->dbDie( "Id of the file record linked to was not retrieved.\n");
         }
         $file_id = $rowHR->{'file_id'};
     };
     if ($@) {
-         die "DbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n";
+         $self->dbDie( "DbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n");
     }
 
     return $file_id;
@@ -995,6 +1105,7 @@ sub getDbh {
     if ($self->{'dbh'}) {
         return $self->{'dbh'};
     }
+
     my $dbh;
     my $connectionBuilder = Bio::SeqWare::Db::Connection->new( $self );
     $dbh = $connectionBuilder->getConnection(
@@ -1062,19 +1173,19 @@ sub dbGetBamFileInfo {
     $bamSelectSTH->execute( @bamSelectWhereParams );
     my $rowHR = $bamSelectSTH->fetchrow_hashref();
     my $twoFound = $bamSelectSTH->fetchrow_hashref();
-    if ($twoFound) {
-        die "DbDuplicateException: More than one record returned\n"
-        . "Query: \"$bamSelectSQL\"\n"
-        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n";
-    }
     $bamSelectSTH->finish();
+    if ($twoFound) {
+        $self->dbDie( "DbDuplicateException: More than one record returned\n"
+        . "Query: \"$bamSelectSQL\"\n"
+        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n");
+    }
 
     my $badKeys = $CLASS->checkCompatibleHash( $recHR, $rowHR);
     if ($badKeys) {
-        die "DbMismatchException: Queried (1) and returned (2) hashes differ unexpectedly:\n"
+        $self->dbDie( "DbMismatchException: Queried (1) and returned (2) hashes differ unexpectedly:\n"
         . Dumper($badKeys) . "\n"
         . "Query: \"$bamSelectSQL\"\n"
-        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n";
+        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n");
     }
 
     return $rowHR
@@ -1121,17 +1232,10 @@ reporting is specified by option.)
 
 sub getLogPrefix {
     my $self = shift;
-
+    my $level = shift;
     my $host = hostname();
     my $timestamp = $CLASS->getTimestamp();
     my $id = $self->{'id'};
-    my $level = 'INFO';
-    if ($self->{'verbose'}) {
-        $level = 'VERBOSE';
-    }
-    if ($self->{'debug'}) {
-        $level = 'DEBUG';
-    }
     return "$host $timestamp $id [$level]";
 }
 
@@ -1149,13 +1253,17 @@ moved over by the length of the prefix (+ a space.)
 
 sub logifyMessage {
     my $self = shift;
+    my $level = shift;
     my $message = shift;
 
     chomp $message;
     my @lines = split( "\n", $message, 0);
-    my $prefix = $self->getLogPrefix() . " ";
-    $message = $prefix . join( "\n$prefix", @lines);
-    return $message . "\n";
+    my $prefix = $self->getLogPrefix( $level ). " " ;
+    my $newMessage;
+    for my $line (@lines) {
+        $newMessage .= $prefix . $line . "\n";
+    }
+    return $newMessage;
 }
 
 =head2 sayDebug
@@ -1188,12 +1296,15 @@ sub sayDebug {
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
         $message = $message . "\n" . Dumper($object);
     }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
     elsif (defined $object) {
         $message = $message . "\n" . $object;
     }
 
     if ( $self->{'log'} ) {
-        $message = $self->logifyMessage($message);
+        $message = $self->logifyMessage('DEBUG', $message);
     }
     print $message;
 }
@@ -1230,12 +1341,15 @@ sub sayVerbose {
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
         $message = $message . "\n" . Dumper($object);
     }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
     elsif (defined $object) {
         $message = $message . "\n"  . $object;
     }
 
     if ( $self->{'log'} ) {
-        $message = $self->logifyMessage($message);
+        $message = $self->logifyMessage('VERBOSE', $message);
     }
     print $message;
 }
@@ -1267,14 +1381,61 @@ sub say {
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
         $message = $message . "\n" . Dumper($object);
     }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
     elsif (defined $object) {
         $message = $message . "\n"  . $object;
     }
 
     if ( $self->{'log'} ) {
-        $message = $self->logifyMessage($message);
+        $message = $self->logifyMessage('INFO', $message);
     }
     print $message;
+}
+
+=head2 sayError
+
+   $self->sayError("Error message to print");
+   $self->sayError("Something", $object);
+
+Output text like print, but takes object option like sayVerbose and
+sayDebug.
+
+If the --log option is set, adds a prefix to each line of a message
+using logifyMessage.
+
+If an object parameter is passed, it will be printed on the following line.
+Normal stringification is performed, so $object can be anything, including
+another string, but if it is a hash-ref or an array ref, it will be formated
+with Data::Dumper before printing.
+
+See also sayVerbose, sayDebug.
+
+=cut
+
+sub sayError {
+    my $self = shift;
+    my $message = shift;
+    my $object = shift;
+    if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
+        $message = $message . "\n" . Dumper($object);
+    }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
+    elsif (defined $object) {
+        $message = $message . "\n" . $object;
+    }
+
+    if ( $self->{'log'} ) {
+        $message = $self->logifyMessage('ERROR', $message);
+        print $message;
+        return 1;
+    }
+    else {
+        die $message;
+    }
 }
 
 =head1 AUTHOR

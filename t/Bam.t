@@ -4,7 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 23;    # Main test module; run this many subtests
+use Test::More 'tests' => 25;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use Test::MockModule;            # Fake subroutine returns from other modules.
@@ -34,7 +34,7 @@ subtest( 'loadOptions()'   => \&testLoadOptions );
 subtest( 'loadArguments()' => \&testLoadArguments );
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
-subtest( 'say(),sayDebug(),SayVerbose()' => \&testSayAndSayDebugAndSayVerbose );
+subtest( 'say(),sayDebug(),SayVerbose(),sayError()' => \&testSayAndSayDebugAndSayVerboseAndSayError );
 subtest( 'getUuid()'     => \&testGetUuid    );
 subtest( 'getTimestamp()' => \&testGetTimestamp);
 subtest( 'getLogPrefix()' => \&testGetLogPrefix);
@@ -50,6 +50,10 @@ subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
 subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
 subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
 subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
+
+subtest( 'dbSetRunning()' => \&testDbSetRunning );
+subtest( 'dbDie()' => \&testDbDie );
+
 
 sub testNew {
     plan( tests => 2 );
@@ -75,7 +79,6 @@ sub testDESTROY {
     {
         my $message = "DESTROY dbh closed";
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->disconnect();
         $obj->{'dbh'}->{mock_can_connect} = 0;
         undef $obj;  # Invokes DESTROY.
@@ -84,14 +87,12 @@ sub testDESTROY {
     {
         my $message = "DESTROY dbh open";
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         undef $obj;  # Invokes DESTROY.
         is( $obj, undef, $message);
     }
     {
         my $message = "DESTROY dbh open wth transaction";
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->begin_work();
         undef $obj;  # Invokes DESTROY.
         is( $obj, undef, $message);
@@ -104,7 +105,6 @@ sub testGetDbh {
     {
         my $message = "Returns cahced value if any";
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         my $dbh = $obj->getDbh();
         my $got = blessed $dbh;
         my $want = "DBI::db";
@@ -113,7 +113,8 @@ sub testGetDbh {
 
     {
         my $message = "Error if failes to get connection";
-        my $obj = makeBam();
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
         my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
         $module->mock( 'getConnection', sub { return undef } );
         my $errorRE = qr/^DbConnectException: Failed to connect to the database\./;
@@ -121,7 +122,8 @@ sub testGetDbh {
     }
 
     {
-        my $obj = makeBam();
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
         my $module = new Test::MockModule( 'Bio::SeqWare::Db::Connection' );
         $module->mock( 'getConnection', sub { return makeMockDbh() } );
         my $dbh = $obj->getDbh();
@@ -154,7 +156,6 @@ sub testSetUploadStatus {
             'results'  => [ [ 'rows' ], [] ],
         });
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'setUploadStatus', @dbEvent );
         {
@@ -173,7 +174,6 @@ sub testSetUploadStatus {
             'results'  => [ [ 'rows' ], ],
         });
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'badSetUploadStatus', @dbEvent );
         {
@@ -189,7 +189,6 @@ sub testSetUploadStatus {
     # DB error.
     {
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{mock_add_resultset} = {
             sql => "UPDATE upload SET status = ? WHERE upload_id = ?",
             results => DBD::Mock->NULL_RESULTSET,
@@ -209,9 +208,10 @@ sub testSetUploadStatus {
 sub testSetDone {
     plan( tests => 1 );
     {
-        my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
         $obj = Test::MockObject::Extends->new( $obj );
+        $obj->mock( 'getDbh', sub{ return makeMockDbh(); });
         $obj->mock( 'setUploadStatus', sub { shift; return (shift,shift,shift); } );
         {
             my $message = "Set done calls setUploadStatus correctly.";
@@ -227,9 +227,10 @@ sub testSetDone {
 sub testSetFail {
     plan( tests => 4);
     {
-        my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
         $obj = Test::MockObject::Extends->new( $obj );
+        $obj->mock( 'getDbh', sub{ return makeMockDbh(); });
         $obj->mock(
             'setUploadStatus',
             sub {
@@ -267,7 +268,6 @@ sub testSetFail {
     # Test cascading exception.
     {
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj = Test::MockObject::Extends->new( $obj );
         my $dbError = "KaboomException: Ouch.\n";
         $obj->mock( 'setUploadStatus', sub { die $dbError; } );
@@ -326,7 +326,6 @@ sub testDbGetBamFileInfo {
         });
 
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'dbGetBamFileInfo', @dbEvent );
         {
@@ -362,7 +361,6 @@ sub testDbGetBamFileInfo {
         });
 
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'dbGetBamFileInfoNoBarcode', @dbEventNoBarcode );
         {
@@ -381,7 +379,6 @@ sub testDbGetBamFileInfo {
         };
 
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         {
             my $message = "Missing sample name";
             my %badRec = %$lookupHR;
@@ -453,7 +450,6 @@ sub testDbGetBamFileInfo {
         });
 
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'dbGetBamFileInfoMismatched', @dbMismatchedEvent );
         {
@@ -494,7 +490,6 @@ sub testDbGetBamFileInfo {
         });
 
         my $obj = makeBam();
-        $obj->{'dbh'} = makeMockDbh();
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'getBamDupFileInfo', @dbDupEvent );
         {
@@ -510,16 +505,34 @@ sub testDbGetBamFileInfo {
 }
 
 sub testRun {
-    plan( tests => 1 );
+    plan( tests => 3 );
 
-    @ARGV = @DEF_CLI;
-    my $obj = $CLASS->new();
     {
         my $message = "run succeeds";
+        @ARGV = @DEF_CLI;
+        my $obj = $CLASS->new();
         my $want = 1;
         my $got = $obj->run();
         is( $got, $want, $message );
     }
+    {
+        my $message = "run fails quietly if logging.";
+        @ARGV = (@DEF_CLI, '--log');
+        my $obj = $CLASS->new();
+        $obj->{'command'} = 'NoSuchFunctionCommand';
+        my $want = 0;
+        my $got = $obj->run();
+        is( $got, $want, $message );
+    }
+    {
+        my $message = "Run fails noisily if not logging error message.";
+        @ARGV = (@DEF_CLI);
+        my $obj = $CLASS->new();
+        $obj->{'command'} = undef;
+        my $matchRE = qr/Use of uninitialized value in hash element/;
+        throws_ok( sub {$obj->run();}, $matchRE, $message );
+    }
+
 }
 
 sub testParseSampleFile {
@@ -971,20 +984,21 @@ sub testParseCli {
     # Add test later.
 }
 
-sub testSayAndSayDebugAndSayVerbose {
+sub testSayAndSayDebugAndSayVerboseAndSayError {
  
-    plan( tests => 21 );
+    plan( tests => 32 );
 
     # --debug set
     {
         @ARGV = ('--debug', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with debug on';
-        my $expectRE = qr/^$text$/;
+        my $expectRE = qr/^$text/;
         {
-            stdout_like { $obj->sayDebug(   $text ); } $expectRE, "--debug and sayDebug";
-            stdout_like { $obj->sayVerbose( $text ); } $expectRE, "--debug and sayVerbose";
-            stdout_like { $obj->say(        $text ); } $expectRE, "--debug and say";
+            stdout_like   { $obj->sayDebug(   $text ); } $expectRE, "--debug and sayDebug";
+            stdout_like   { $obj->sayVerbose( $text ); } $expectRE, "--debug and sayVerbose";
+            stdout_like   { $obj->say(        $text ); } $expectRE, "--debug and say";
+            throws_ok(sub { $obj->sayError(   $text ); },$expectRE, "--debug and sayError");
         }
     }
 
@@ -993,11 +1007,12 @@ sub testSayAndSayDebugAndSayVerbose {
         @ARGV = ('--verbose', @DEF_CLI);
         my $obj = $CLASS->new();
         my $text = 'Say with verbose on';
-        my $expectRE = qr/^$text$/;
+        my $expectRE = qr/^$text/;
         {
             stdout_unlike { $obj->sayDebug(   $text ); } $expectRE, "--verbose and sayDebug";
             stdout_like   { $obj->sayVerbose( $text ); } $expectRE, "--verbose and sayVerbose";
             stdout_like   { $obj->say(        $text ); } $expectRE, "--verbose and say";
+            throws_ok(sub { $obj->sayError(   $text ); },$expectRE, "--verbose and sayError");
         }
     }
 
@@ -1006,11 +1021,12 @@ sub testSayAndSayDebugAndSayVerbose {
         @ARGV = @DEF_CLI;
         my $obj = $CLASS->new();
         my $text = 'Say with no flag';
-        my $expectRE = qr/^$text$/;
+        my $expectRE = qr/^$text/;
         {
             stdout_unlike { $obj->sayDebug(   $text ); } $expectRE, "no flag and sayDebug";
             stdout_unlike { $obj->sayVerbose( $text ); } $expectRE, "no flag and sayVerbose";
             stdout_like   { $obj->say(        $text ); } $expectRE, "no flag and say";
+            throws_ok(sub { $obj->sayError(   $text ); },$expectRE, "no flag and sayError");
 
         }
     }
@@ -1022,10 +1038,12 @@ sub testSayAndSayDebugAndSayVerbose {
         my $text = 'Say with scalar object.';
         my $object = 'The second object';
         my $expect = "$text\n$object";
+        my $expectRE = qr/$text\n$object/m;
         {
-            stdout_is { $obj->sayDebug(   $text, $object ); } $expect, "--Scalar object and sayDebug";
-            stdout_is { $obj->sayVerbose( $text, $object ); } $expect, "--Scalar object and sayVerbose";
-            stdout_is { $obj->say(        $text, $object ); } $expect, "--Scalar object and say";
+            stdout_is     { $obj->sayDebug(   $text, $object ); } $expect, "--Scalar object and sayDebug";
+            stdout_is     { $obj->sayVerbose( $text, $object ); } $expect, "--Scalar object and sayVerbose";
+            stdout_is     { $obj->say(        $text, $object ); } $expect, "--Scalar object and say";
+            throws_ok(sub { $obj->sayError(   $text, $object ); },$expectRE, "--Scalar object and sayError");
         }
     }
 
@@ -1036,11 +1054,14 @@ sub testSayAndSayDebugAndSayVerbose {
         my $text = 'Say with hashRef object.';
         my $object = {'key'=>'value'};
         my $objectString = Dumper($object);
-        my $expect = "$text\n$objectString";
+        my $expect   =   "$text\n$objectString";
+        my $objectForRE = "\\" . $objectString;
+        my $expectRE = qr/$text\n$objectForRE/m;
         {
-            stdout_is { $obj->sayDebug(   $text, $object ); } $expect, "--hashRef object and sayDebug";
-            stdout_is { $obj->sayVerbose( $text, $object ); } $expect, "--hashRef object and sayVerbose";
-            stdout_is { $obj->say(        $text, $object ); } $expect, "--hashRef object and say";
+            stdout_is     { $obj->sayDebug(   $text, $object ); } $expect, "HashRef object and sayDebug";
+            stdout_is     { $obj->sayVerbose( $text, $object ); } $expect, "HashRef object and sayVerbose";
+            stdout_is     { $obj->say(        $text, $object ); } $expect, "HashRef object and say";
+            throws_ok(sub { $obj->sayError(   $text, $object ); },$expectRE, "HashRef object and sayError");
         }
     }
 
@@ -1051,11 +1072,32 @@ sub testSayAndSayDebugAndSayVerbose {
         my $text = 'Say with arrayRef object.';
         my $object = ['key', 'value'];
         my $objectString = Dumper($object);
-        my $expect = "$text\n$objectString";
+        my $expect   =   "$text\n$objectString";
+        my $objectForRE = "\\" . $objectString;
+        $objectForRE = join( '\[', split( '\[', $objectForRE ));
+        $objectForRE = join( '\]', split( '\]', $objectForRE ));
+        my $expectRE = qr/$text\n$objectForRE/m;
         {
-            stdout_is { $obj->sayDebug(   $text, $object ); } $expect, "--arrayRef object and sayDebug";
-            stdout_is { $obj->sayVerbose( $text, $object ); } $expect, "--arrayRef object and sayVerbose";
-            stdout_is { $obj->say(        $text, $object ); } $expect, "--arrayRef object and say";
+            stdout_is     { $obj->sayDebug(   $text, $object ); } $expect, "ArrayRef object and sayDebug";
+            stdout_is     { $obj->sayVerbose( $text, $object ); } $expect, "ArrayRef object and sayVerbose";
+            stdout_is     { $obj->say(        $text, $object ); } $expect, "ArrayRef object and say";
+            throws_ok(sub { $obj->sayError(   $text, $object ); },$expectRE, "ArrayRef object and sayError");
+        }
+    }
+
+    # $object parameter is object.
+    {
+        @ARGV = ('--debug', @DEF_CLI);
+        my $obj = $CLASS->new();
+        my $text = 'Say with hashRef object.';
+        my $object = $obj;
+        my $objectString = blessed $obj;
+        my $expectRE   =  qr/$text\n$objectString - /;
+        {
+            stdout_like   { $obj->sayDebug(   $text, $object ); } $expectRE, "Object object and sayDebug";
+            stdout_like   { $obj->sayVerbose( $text, $object ); } $expectRE, "Object object and sayVerbose";
+            stdout_like   { $obj->say(        $text, $object ); } $expectRE, "Object object and say";
+            throws_ok(sub { $obj->sayError(   $text, $object ); },$expectRE, "Object object and sayError");
         }
     }
 
@@ -1067,13 +1109,23 @@ sub testSayAndSayDebugAndSayVerbose {
         my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
         my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
         my $hostRES = '[^\s]+';
-        my $levelRES = '(INFO|VERBOSE|DEBUG)';
-        my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES . ' \[' . $levelRES . '\]';
-        my $expectRE = qr/^$prefxRES $text\n$/m;
+        my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES;
+        
         {
+            my $expectRE = qr/^$prefxRES \[DEBUG\] $text\n$/m;
             stdout_like { $obj->sayDebug(   $text ); } $expectRE, "--debug and sayDebug";
+        }
+        {
+            my $expectRE = qr/^$prefxRES \[VERBOSE\] $text\n$/m;
             stdout_like { $obj->sayVerbose( $text ); } $expectRE, "--debug and sayVerbose";
+        }
+        {
+            my $expectRE = qr/^$prefxRES \[INFO\] $text\n$/m;
             stdout_like { $obj->say(        $text ); } $expectRE, "--debug and say";
+        }
+        {
+            my $expectRE = qr/^$prefxRES \[ERROR\] $text\n$/m;
+            stdout_like { $obj->sayError(   $text ); } $expectRE, "--debug and sayError";
         }
     }
 
@@ -1336,20 +1388,31 @@ sub testCheckCompatibleHash {
 }
 
 sub testGetLogPrefix {
-    plan( tests => 1);
+    plan( tests => 2);
 
     my $obj = makeBam();
-
-    my $message = "Log prefix is formatted correctly";
-    my $got = $obj->getLogPrefix();
     my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
     my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
     my $hostRES = '[^\s]+';
-    my $levelRES = '(INFO|VERBOSE|DEBUG)';
-    my $exectRE = qr(^$hostRES $timestampRES $uuidRES \[$levelRES\]$);
-    like( $got, $exectRE, $message);
-}
 
+    {
+        my $message = "Log prefix is formatted correctly for ERROR messages";
+        my $level= 'ERROR';
+        my $got = $obj->getLogPrefix($level);
+        my $exectRE = qr(^$hostRES $timestampRES $uuidRES \[$level\]$);
+        like( $got, $exectRE, $message);
+
+    }
+    {
+        my $message = "Log prefix is formatted correctly for DEBUG messages";
+        my $level= 'DEBUG';
+        my $got = $obj->getLogPrefix($level);
+        my $exectRE = qr(^$hostRES $timestampRES $uuidRES \[$level\]$);
+        like( $got, $exectRE, $message);
+
+    }
+
+}
 sub testLogifyMessage {
     plan( tests => 4 );
 
@@ -1357,48 +1420,385 @@ sub testLogifyMessage {
     my $timestampRES = '\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}';
     my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
     my $hostRES = '[^\s]+';
-    my $levelRES = '(INFO|VERBOSE|DEBUG)';
-    my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES . ' \[' . $levelRES . '\]';
+    my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES;
 
     {
-        my $message = 'Logify a single line message ending in \n';
+        my $message = 'Logify a single line ERROR message ending in \n';
         my $text = "Simple message line";
-        my $got = $obj->logifyMessage("$text\n");
-        my $expectRE = qr/^$prefxRES $text\n$/m;
+        my $level = 'INFO';
+        my $got = $obj->logifyMessage($level, "$text\n");
+        my $expectRE = qr/^$prefxRES \[$level\] $text\n$/m;
         like($got, $expectRE, $message);
     }
     {
-        my $message = 'Logify a multi-line message ending in \n';
+        my $message = 'Logify a multi-line VERBOSE message ending in \n';
         my $text1 = "Complex message";
         my $text2 = "\twith";
         my $text3 = "\tsome formating";
-        my $expectRE = qr/^$prefxRES $text1\n$prefxRES $text2\n$prefxRES $text3\n$/m;
-        my $got = $obj->logifyMessage("$text1\n$text2\n$text3\n");
+        my $level = 'VERBOSE';
+        my $expectRE = qr/^$prefxRES \[$level\] $text1\n$prefxRES \[$level\] $text2\n$prefxRES \[$level\] $text3\n$/m;
+        my $got = $obj->logifyMessage($level, "$text1\n$text2\n$text3\n");
         like($got, $expectRE, $message);
     }
     {
-        my $message = 'Logify a single line message not ending in \n';
+        my $message = 'Logify a single line ERROR message not ending in \n';
         my $text = "Simple message line";
-        my $got = $obj->logifyMessage("$text");
-        my $expectRE = qr/^$prefxRES $text\n$/m;
+        my $level = 'ERROR';
+        my $got = $obj->logifyMessage($level, "$text");
+        my $expectRE = qr/^$prefxRES \[$level\] $text\n$/m;
         like($got, $expectRE, $message);
     }
     {
-        my $message = 'Logify a multi-line message not ending in \n';
+        my $message = 'Logify a multi-line DEBUG message not ending in \n';
         my $text1 = "Complex message";
         my $text2 = "\twith";
         my $text3 = "\tsome formating";
-        my $expectRE = qr/^$prefxRES $text1\n$prefxRES $text2\n$prefxRES $text3\n$/m;
-        my $got = $obj->logifyMessage("$text1\n$text2\n$text3");
+        my $level = 'DEBUG';
+        my $expectRE = qr/^$prefxRES \[$level\] $text1\n$prefxRES \[$level\] $text2\n$prefxRES \[$level\] $text3\n$/m;
+        my $got = $obj->logifyMessage($level, "$text1\n$text2\n$text3");
         like($got, $expectRE, $message);
     }
 
+}
+
+sub testDbDie {
+    plan( tests => 24 );
+
+    # Normal db object
+    {
+        my $obj = makeBam();
+
+        {
+           my $message = "dbh in expected state";
+           ok($obj->{'dbh'} && $obj->{'dbh'}->{'Active'} && $obj->{'dbh'}->{'AutoCommit'}, $message);
+        }
+
+        eval {
+            $obj->dbDie("TestingDbDieException: Plain message");
+        };
+
+        {
+            my $message = "Will throw plain error";
+            my $got = $@;
+            $matchRE = qr/^TestingDbDieException: Plain message/;
+            like($got, $matchRE, $message);
+        }
+        {
+            my $message = "dbh is cleared";
+            is($obj->{'dbh'}, undef, $message);
+        }
+        {
+            my $message = "dbh still exists";
+            ok(exists $obj->{'dbh'}, $message);
+        }
+    }
+
+    # Db Object in transaction, with message and rollback failure.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql =>  "BEGIN WORK",
+            results => [[]]
+        };
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql =>  "ROLLBACK",
+            results => DBD::Mock->NULL_RESULTSET,
+            failure => [ 5, 'Force rollback failure.' ],
+        };
+
+        $obj->{'dbh'}->begin_work();
+        {
+           my $message = "dbh in expected state";
+           ok($obj->{'dbh'} && $obj->{'dbh'}->{'Active'} && ! $obj->{'dbh'}->{'AutoCommit'}, $message);
+        }
+
+        $obj->{'verbose'} = 1;
+        eval {
+            $obj->dbDie("TestingDbDieException: In medias transaction.\n");
+        };
+
+        {
+            my $message = "Will throw error and try to do rollback, with abort";
+            my $got = $@;
+            $matchRE = qr/^TestingDbDieException: In medias transaction.*Also:.*DbRollbackException: Rollback failed because of:.*Force rollback failure/s;
+            like($got, $matchRE, $message);
+        }
+        {
+            my $message = "dbh is cleared";
+            is($obj->{'dbh'}, undef, $message);
+        }
+        {
+            my $message = "dbh still exists";
+            ok(exists $obj->{'dbh'}, $message);
+        }
+    }
+
+    # Db Object in transaction, with message.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'}->begin_work();
+        {
+           my $message = "dbh in expected state";
+           ok($obj->{'dbh'} && $obj->{'dbh'}->{'Active'} && ! $obj->{'dbh'}->{'AutoCommit'}, $message);
+        }
+
+        $obj->{'verbose'} = 1;
+        eval {
+            $obj->dbDie("TestingDbDieException: In medias transaction.");
+        };
+
+        {
+            my $message = "Will throw error and try to do rollback, with message";
+            my $got = $@;
+            $matchRE = qr/^TestingDbDieException: In medias transaction.*Rollback was performed/s;
+            like($got, $matchRE, $message);
+        }
+        {
+            my $message = "dbh is cleared";
+            is($obj->{'dbh'}, undef, $message);
+        }
+        {
+            my $message = "dbh still exists";
+            ok(exists $obj->{'dbh'}, $message);
+        }
+    }
+
+    # Db Object in transaction, without message.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'}->begin_work();
+        {
+           my $message = "dbh in expected state";
+           ok($obj->{'dbh'} && $obj->{'dbh'}->{'Active'} && ! $obj->{'dbh'}->{'AutoCommit'}, $message);
+        }
+
+        $obj->{'verbose'} = 0;
+        eval {
+            $obj->dbDie("TestingDbDieException: In medias transaction.");
+        };
+
+        {
+            my $message = "Will throw error and try to do rollback, without message";
+            my $got = $@;
+            $matchRE = qr/^TestingDbDieException: In medias transaction\./;
+            like($got, $matchRE, $message);
+        }
+        {
+            my $message = "dbh is cleared";
+            is($obj->{'dbh'}, undef, $message);
+        }
+        {
+            my $message = "dbh still exists";
+            ok(exists $obj->{'dbh'}, $message);
+        }
+    }
+
+    # Db Object not active.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'}->{'mock_can_connect'} = 0;
+        {
+           my $message = "dbh in expected state";
+           ok($obj->{'dbh'} && ! $obj->{'dbh'}->{'Active'}, $message);
+        }
+
+        $obj->{'verbose'} = 0;
+        eval {
+            $obj->dbDie("TestingDbDieException: Not active.");
+        };
+
+        {
+            my $message = "Will throw error when not active";
+            my $got = $@;
+            $matchRE = qr/^TestingDbDieException: Not active\./;
+            like($got, $matchRE, $message);
+        }
+        {
+            my $message = "dbh is cleared";
+            is($obj->{'dbh'}, undef, $message);
+        }
+        {
+            my $message = "dbh still exists";
+            ok(exists $obj->{'dbh'}, $message);
+        }
+    }
+    # Db Object not present.
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'} = undef;
+        {
+           my $message = "dbh in expected state";
+           ok( ! $obj->{'dbh'}, $message);
+        }
+
+        $obj->{'verbose'} = 0;
+        eval {
+            $obj->dbDie("TestingDbDieException: Not present.");
+        };
+
+        {
+            my $message = "Will throw error when not present";
+            my $got = $@;
+            $matchRE = qr/^TestingDbDieException: Not present\./;
+            like($got, $matchRE, $message);
+        }
+        {
+            my $message = "dbh is cleared";
+            is($obj->{'dbh'}, undef, $message);
+        }
+        {
+            my $message = "dbh still exists";
+            ok(exists $obj->{'dbh'}, $message);
+        }
+    }
+
+}
+
+sub testDbSetRunning {
+    plan( tests => 6 );
+
+    my $oldStep = "dummy";
+    my $newStep = "dummy2";
+    my $oldStatus = $oldStep . "_done";
+    my $newStatus = $newStep . "_running";
+    my $upload_id = 21;
+    my $sample_id = 19;
+
+    # valid run - found something.
+    {
+        my @dbEvents = (
+            dbMockStep_Begin(),
+            dbMockStep_SetTransactionLevel(),
+            {
+                'statement'   => qr/SELECT \* FROM upload WHERE status = /msi,
+                'bound_params' => [ $oldStatus ],
+                'results'  => [
+                    ['upload_id', 'status', 'sample_id' ],
+                    [$upload_id, $oldStatus, $sample_id],
+                ],
+            },
+            {
+                'statement'   => qr/UPDATE upload SET status = .*/msi,
+                'bound_params' => [ $newStatus, $upload_id ],
+                'results'  => [ [ 'rows' ], [] ],
+            },
+            dbMockStep_Commit()
+        );
+        my $obj = makeBam();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setRunWithReturn', @dbEvents );
+
+        my $got; # Saving between tests as trouble to reset mockdb.
+        {
+            my $message = "Says nothing about nothing to do.";
+            my $expectRE = qr/Nothing to do/;
+            stdout_unlike( sub { $got = $obj->dbSetRunning( $oldStep, $newStep ); }, $expectRE, $message);
+        }
+        {
+            my $message = "dbSetRunning with good data recovers record.";
+            my $want = {'upload_id' => $upload_id, 'status' => $newStatus, 'sample_id' => $sample_id };
+            is_deeply( $got, $want, $message );
+        }
+    }
+
+    # valid run - found nothing.
+    {
+        my @dbEventsNothingToDo = (
+            dbMockStep_Begin(),
+            dbMockStep_SetTransactionLevel(),
+            {
+                'statement'   => qr/SELECT \* FROM upload WHERE status = /msi,
+                'bound_params' => [ $oldStatus ],
+                'results'  => [[]],
+            },
+            dbMockStep_Commit()
+        );
+        my $obj = makeBam();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setRunWithNothingToDo', @dbEventsNothingToDo );
+
+        my $got; # Saving between tests as trouble to reset mockdb.
+
+        {
+            my $message = "Says something about nothing to do.";
+            my $expectRE = qr/Nothing to do\./;
+            stdout_like( sub { $got = $obj->dbSetRunning( $oldStep, $newStep ); }, $expectRE, $message);
+        }
+        {
+            my $message = "dbSetRunning with nothing to do.";
+            my $want = undef;
+            is( $got, $want, $message );
+        }
+    }
+
+
+    # invalid - error thrown if die while updating.
+    {
+        my @dbEvents = (
+            dbMockStep_Begin(),
+            dbMockStep_SetTransactionLevel(),
+            {
+                'statement'   => qr/SELECT \* FROM upload WHERE status = /msi,
+                'bound_params' => [ $oldStatus ],
+                'results'  => [
+                    ['upload_id', 'status', 'sample_id' ],
+                    [$upload_id, $oldStatus, $sample_id],
+                ],
+            },
+            {
+                'statement'   => qr/UPDATE upload SET status = .*/msi,
+                'bound_params' => [ $newStatus, $upload_id ],
+                'results'  => [ [ 'rows' ], ],
+            },
+            dbMockStep_Rollback()
+        );
+        my $obj = makeBam();
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setRunWithReturn', @dbEvents );
+        {
+            my $message = "dbSetRunning error if update fails.";
+            my $errorRE = qr/^DbSetRunningException: Failed to select lane to run because of:/;
+            throws_ok( sub { $obj->dbSetRunning( $oldStep, $newStep ); }, $errorRE, $message );
+        }
+    }
+
+    # invalid - error thrown if die and can't rollback reported
+    {
+        my $obj = makeBam();
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql => "BEGIN WORK",
+            results => [[]],
+        };
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql => "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+            results => [[]],
+        };
+        $obj->{'dbh'}->{mock_add_resultset} = [
+            ['upload_id', 'status', 'sample_id' ],
+            [$upload_id, $oldStatus, $sample_id],
+        ];
+        $obj->{'dbh'}->{mock_add_resultset} = [ [ 'rows' ], ];
+        $obj->{'dbh'}->{mock_add_resultset} = {
+            sql => "ROLLBACK",
+            results => DBD::Mock->NULL_RESULTSET,
+            failure => [ 5, 'Trigger bad rollback.' ],
+        };
+        {
+            my $message = "Error ifdbSetRunning roolback failes after failed update.";
+            my $errorRES1 = 'DbSetRunningException: Failed to select lane to run because of:';
+            my $errorRES2 = 'DbRollbackException: Rollback failed because of:';
+            my $errorRES3 = 'Trigger bad rollback';
+            my $errorRE = qr/^$errorRES1.*$errorRES2.*$errorRES3/sm;
+            throws_ok( sub { $obj->dbSetRunning( $oldStep, $newStep ); }, $errorRE, $message );
+        }
+    }
 }
 
 sub makeBam {
 
     @ARGV = @DEF_CLI;
     my $obj = $CLASS->new();
+    $obj->{'dbh'} = makeMockDbh();
     return $obj;
 }
 
@@ -1410,4 +1810,32 @@ sub makeMockDbh {
         { 'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1 },
     );
     return $mockDbh;
+}
+
+sub dbMockStep_Begin {
+    return {
+        'statement' => 'BEGIN WORK',
+        'results'   => [ [] ],
+    };
+}
+
+sub dbMockStep_SetTransactionLevel {
+    return {
+        'statement' => 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+        'results'  => [ [] ],
+    };
+}
+
+sub dbMockStep_Commit {
+    return {
+        'statement' => 'COMMIT',
+        'results'   => [ [] ],
+    };
+}
+
+sub dbMockStep_Rollback {
+    return {
+        'statement' => 'ROLLBACK',
+        'results'   => [ [] ],
+    };
 }
