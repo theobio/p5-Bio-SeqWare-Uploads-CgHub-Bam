@@ -397,7 +397,7 @@ sub test_do_launch {
         # Allow mock of the dbh to survive death and reserection of dbh that is
         # caused by the failure tested above. This is the second mock dbh
         $module->mock(
-            'setFail',
+            'dbSetFail',
             sub {
                 my $self = shift;
                 $self->{'dbh'} = makeMockDbh();

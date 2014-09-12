@@ -42,9 +42,9 @@ subtest( 'logifyMessage()' => \&testLogifyMessage);
 subtest( 'parseSampleFile()' => \&testParseSampleFile);
 subtest( 'getDbh()'  => \&testGetDbh);
 subtest( 'DESTROY()' => \&testDESTROY );
-subtest( 'setUploadStatus()' => \&testSetUploadStatus );
-subtest( 'setUDone()' => \&testSetDone );
-subtest( 'setFail()' => \&testSetFail );
+subtest( 'dbSetUploadStatus()' => \&testDbSetUploadStatus );
+subtest( 'dbSetDone()' => \&testDbSetDone );
+subtest( 'dbSetFail()' => \&testDbSetFail );
 subtest( 'getErrorName()' => \&testGetErrorName );
 subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
 subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
@@ -143,7 +143,7 @@ sub testGetDbh {
     }
 }
 
-sub testSetUploadStatus {
+sub testDbSetUploadStatus {
     plan( tests => 3 );
 
     # valid run.
@@ -157,10 +157,10 @@ sub testSetUploadStatus {
         });
         my $obj = makeBam();
         $obj->{'dbh'}->{'mock_session'} =
-            DBD::Mock::Session->new( 'setUploadStatus', @dbEvent );
+            DBD::Mock::Session->new( 'dbSetUploadStatus', @dbEvent );
         {
-            my $message = "setUploadStatus with good data works.";
-            my $got = $obj->setUploadStatus( $upload_id, $newStatus );
+            my $message = "dbSetUploadStatus with good data works.";
+            my $got = $obj->dbSetUploadStatus( $upload_id, $newStatus );
             my $want = 1;
             is( $got, $want, $message );
         }
@@ -175,14 +175,14 @@ sub testSetUploadStatus {
         });
         my $obj = makeBam();
         $obj->{'dbh'}->{'mock_session'} =
-            DBD::Mock::Session->new( 'badSetUploadStatus', @dbEvent );
+            DBD::Mock::Session->new( 'badDbSetUploadStatus', @dbEvent );
         {
-            my $message = "setUploadStatus fails if db returns unexpected results.";
+            my $message = "dbSetUploadStatus fails if db returns unexpected results.";
             my $error1RES = 'DbStatusUpdateException: Failed to change upload record ' . $upload_id. ' to ' . $newStatus. '\.';
             my $error2RES = 'Cleanup likely needed\. Error was:';
             my $error3RES = 'Updated 0 update records, expected 1\.';
             my $errorRE = qr/$error1RES\n$error2RES\n$error3RES/m;
-            throws_ok( sub { $obj->setUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
+            throws_ok( sub { $obj->dbSetUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
         }
     }
 
@@ -195,28 +195,28 @@ sub testSetUploadStatus {
             failure => [ 5, 'Ooops.' ],
         };
         {
-            my $message = "setUploadStatus fails if db throws error.";
+            my $message = "dbSetUploadStatus fails if db throws error.";
             my $error1RES = 'DbStatusUpdateException: Failed to change upload record ' . $upload_id. ' to ' . $newStatus. '\.';
             my $error2RES = 'Cleanup likely needed\. Error was:';
             my $error3RES = 'Ooops\.';
             my $errorRE = qr/$error1RES\n$error2RES\n.*$error3RES/m;
-            throws_ok( sub { $obj->setUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
+            throws_ok( sub { $obj->dbSetUploadStatus( $upload_id, $newStatus ); }, $errorRE, $message);
         }
     }
 }
 
-sub testSetDone {
+sub testDbSetDone {
     plan( tests => 1 );
     {
         @ARGV = @DEF_CLI;
         my $obj = $CLASS->new();
         $obj = Test::MockObject::Extends->new( $obj );
         $obj->mock( 'getDbh', sub{ return makeMockDbh(); });
-        $obj->mock( 'setUploadStatus', sub { shift; return (shift,shift,shift); } );
+        $obj->mock( 'dbSetUploadStatus', sub { shift; return (shift,shift,shift); } );
         {
-            my $message = "Set done calls setUploadStatus correctly.";
+            my $message = "Set done calls dbSetUploadStatus correctly.";
             my @want = (21, "dummy-status_done", undef);
-            my @got = $obj->setDone( {'upload_id' => 21}, "dummy-status" );
+            my @got = $obj->dbSetDone( {'upload_id' => 21}, "dummy-status" );
             is_deeply( \@got, \@
             want, $message);
         }
@@ -224,7 +224,7 @@ sub testSetDone {
 
 }
 
-sub testSetFail {
+sub testDbSetFail {
     plan( tests => 4);
     {
         @ARGV = @DEF_CLI;
@@ -232,7 +232,7 @@ sub testSetFail {
         $obj = Test::MockObject::Extends->new( $obj );
         $obj->mock( 'getDbh', sub{ return makeMockDbh(); });
         $obj->mock(
-            'setUploadStatus',
+            'dbSetUploadStatus',
             sub {
                 my $self = shift;
                 $self->{'_test_upload_id'} = shift;
@@ -244,7 +244,7 @@ sub testSetFail {
         my $step = "dummy-status";
         my $recHR = {'upload_id' => $upload_id, 'ignoreMe' => 'yes'};
         my $error = "JokeException: Just kidding,\n";
-        my $retVal = $obj->setFail( $recHR, $step, $error );
+        my $retVal = $obj->dbSetFail( $recHR, $step, $error );
         {
             my $message = "Set fail returns error";
             my $got = $retVal;
@@ -252,13 +252,13 @@ sub testSetFail {
             is( $got, $want, $message );
         }
         {
-            my $message = "passed upload_id to setUploadStatus";
+            my $message = "passed upload_id to dbSetUploadStatus";
             my $got = $obj->{'_test_upload_id'};
             my $want = $upload_id;
             is( $got, $want, $message );
         }
         {
-            my $message = "passed new status correctly to setUploadStatus";
+            my $message = "passed new status correctly to dbSetUploadStatus";
             my $got = $obj->{'_test_newStatus'};
             my $want = "dummy-status_failed_Joke";
             is( $got, $want, $message );
@@ -270,12 +270,12 @@ sub testSetFail {
         my $obj = makeBam();
         $obj = Test::MockObject::Extends->new( $obj );
         my $dbError = "KaboomException: Ouch.\n";
-        $obj->mock( 'setUploadStatus', sub { die $dbError; } );
+        $obj->mock( 'dbSetUploadStatus', sub { die $dbError; } );
         my $upload_id = 21;
         my $step = "dummy-status";
         my $recHR = {'upload_id' => $upload_id, 'ignoreMe' => 'yes'};
         my $error = "JokeException: Just kidding,\n";
-        my $retVal = $obj->setFail( $recHR, $step, $error );
+        my $retVal = $obj->dbSetFail( $recHR, $step, $error );
         {
             my $message = "Set fail with error returns cascade error message";
             my $got = $retVal;

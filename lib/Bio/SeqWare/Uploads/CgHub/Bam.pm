@@ -666,10 +666,10 @@ sub do_launch {
         };
         if ($@) {
             my $error = $@;
-            $self->setFail( $uploadHR, "launch", $@ );
+            $self->dbSetFail( $uploadHR, "launch", $@ );
         }
         else {
-            $self->setDone( $uploadHR, "launch" );
+            $self->dbSetDone( $uploadHR, "launch" );
         }
     }
     return 1;
@@ -759,29 +759,29 @@ sub do_status_local {
     return 1;
 }
 
-=head2 setDone
+=head2 dbSetDone
 
-    my $self->setDone( $hashRef, $step );
+    my $self->dbSetDone( $hashRef, $step );
 
-Simple a wrapper for setUploadStatus, returns the result of calling that with
+Simple a wrapper for dbSetUploadStatus, returns the result of calling that with
 the "upload_id" key from the provided $hashRef and a new status of
 "$step" . "_done"
 
 =cut
 
-sub setDone {
+sub dbSetDone {
     my $self = shift;
     my $uploadHR = shift;
     my $step = shift;
 
-    return $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_done");
+    return $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_done");
 }
 
-=head2 setFail
+=head2 dbSetFail
 
-    my $self->setDone( $hashRef, $step, $error );
+    my $self->dbSetDone( $hashRef, $step, $error );
 
-A wrapper for setUploadStatus, Calls that with the "upload_id" key from the
+A wrapper for dbSetUploadStatus, Calls that with the "upload_id" key from the
 provided $hashRef and a new status of
 "$step" . "_fail_" . getErrorName( $error )
 
@@ -791,7 +791,7 @@ error will be *prepended* to $error before returning, separated with the string
 
 =cut
 
-sub setFail {
+sub dbSetFail {
     my $self = shift;
     my $uploadHR = shift;
     my $step = shift;
@@ -800,7 +800,7 @@ sub setFail {
     my $errorName = $CLASS->getErrorName($error);
 
     eval{
-        $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
+        $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
     };
     my $alsoError = $@;
     if ($alsoError) {
@@ -850,7 +850,7 @@ sub dbSetRunning {
             say('Nothing to do.');
         }
         else {
-            $self->setUploadStatus( $rowHR->{ 'upload_id' }, $stepRunning );
+            $self->dbSetUploadStatus( $rowHR->{ 'upload_id' }, $stepRunning );
             $uploadRecHR = \%$rowHR;
             $uploadRecHR->{'status'} = $stepRunning;
         }
@@ -863,16 +863,16 @@ sub dbSetRunning {
     return $uploadRecHR;
 }
 
-=head2 setUploadStatus
+=head2 dbSetUploadStatus
 
-    my $self->setUploadStatus( $upload_id, $newStatus )
+    my $self->dbSetUploadStatus( $upload_id, $newStatus )
 
 Changes the status of the specified upload record to the specified status.
 Either returns 1 for success or dies with error.
 
 =cut
 
-sub setUploadStatus {
+sub dbSetUploadStatus {
     my $self = shift;
     my $upload_id = shift;
     my $newStatus = shift;
