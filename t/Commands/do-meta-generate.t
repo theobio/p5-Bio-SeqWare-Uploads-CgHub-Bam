@@ -3,7 +3,7 @@ use 5.014;
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More 'tests' => 1;     # Main test module; run this many tests
+use Test::More 'tests' => 2;     # Main test module; run this many tests
 use Test::Exception;
 
 BEGIN {
@@ -45,7 +45,7 @@ my $GOOD_ANALYSIS_XML_FILE = File::Spec->catfile( $DATA_DIR, 'analysis.xml' );
 
 
 subtest( '_metaGenerate_getDataReadLength()' => \&test_metaGenerate_getDataReadLength );
-
+subtest( '_metaGenerate_getDataReadCount()' => \&test_metaGenerate_getDataReadCount );
 
 
 sub test_metaGenerate_getDataReadLength {
@@ -147,6 +147,108 @@ sub test_metaGenerate_getDataReadLength {
         $mock_readpipe->{'mock'} = 1;
     }
 }
+
+sub test_metaGenerate_getDataReadCount {
+    plan( tests => 5);
+
+    # Lookup returns valid value - 2
+    {
+        my $experimentId = 5;
+        my $readEnds = 2;
+        my @dbSession = ({
+            'statement'    => qr/SELECT count\(\*\) as read_ends.*/msi,
+            'bound_params' => [ $experimentId ],
+            'results'  => [ ['read_ends'], [$readEnds], ]
+        });
+        my $obj = makeBamForMetaGenerate();
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "readEnds", @dbSession );
+        {
+            my $message = "Read end query returns valid value: 2";
+            my $want = $readEnds;
+            my $got = $obj->_metaGenerate_getDataReadCount( $experimentId );
+            is( $got, $want, $message);
+        }
+    }
+
+    {
+        my $experimentId = 5;
+        my $readEnds = 1;
+        my @dbSession = ({
+            'statement'    => qr/SELECT count\(\*\) as read_ends.*/msi,
+            'bound_params' => [ $experimentId ],
+            'results'  => [ ['read_ends'], [$readEnds], ]
+        });
+        my $obj = makeBamForMetaGenerate();
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "readEnds", @dbSession );
+        {
+            my $message = "Read end query returns valid value: 1";
+            my $want = $readEnds;
+            my $got = $obj->_metaGenerate_getDataReadCount( $experimentId );
+            is( $got, $want, $message);
+        }
+   }
+
+   # Lookup returns invalid value - 0
+   {
+        my $experimentId = 5;
+        my $readEnds = 0;
+        my @dbSession = ({
+            'statement'    => qr/SELECT count\(\*\) as read_ends.*/msi,
+            'bound_params' => [ $experimentId ],
+            'results'  => [ ['read_ends'], [$readEnds], ]
+        });
+        my $obj = makeBamForMetaGenerate();
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "readEnds", @dbSession );
+        {
+            my $message = "Read end query returns invalid value: 0";
+            my $errorRES1 = "DbReadCountException: Failed to retrieve the number of reads\. Error was:";
+            my $errorRES2 = "DbDataError: Found $readEnds read ends, expected 1 or 2\.";
+            my $matchRE = qr/^$errorRES1.*\n\t$errorRES2/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadCount( $experimentId ); }, $matchRE, $message);
+        }
+   }
+
+   # Lookup returns invalid value - 3
+   {
+        my $experimentId = 5;
+        my $readEnds = 3;
+        my @dbSession = ({
+            'statement'    => qr/SELECT count\(\*\) as read_ends.*/msi,
+            'bound_params' => [ $experimentId ],
+            'results'  => [ ['read_ends'], [$readEnds], ]
+        });
+        my $obj = makeBamForMetaGenerate();
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "readEnds", @dbSession );
+        {
+            my $message = "Read end query returns invalid value: 3";
+            my $errorRES1 = "DbReadCountException: Failed to retrieve the number of reads\. Error was:";
+            my $errorRES2 = "DbDataError: Found $readEnds read ends, expected 1 or 2\.";
+            my $matchRE = qr/^$errorRES1.*\n\t$errorRES2/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadCount( $experimentId ); }, $matchRE, $message);
+        }
+   }
+
+   # Lookup returns invalid value - undef
+   {
+        my $experimentId = 5;
+        my @dbSession = ({
+            'statement'    => qr/SELECT count\(\*\) as read_ends.*/msi,
+            'bound_params' => [ $experimentId ],
+            'results'  => [ [] ]
+        });
+        my $obj = makeBamForMetaGenerate();
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "readEnds", @dbSession );
+        {
+            my $message = "Read end query returns invalid value: undef";
+            my $errorRES1 = "DbReadCountException: Failed to retrieve the number of reads\. Error was:";
+            my $errorRES2 = "DbLookupError: Nothing retrieved from database\.";
+            my $matchRE = qr/^$errorRES1.*\n\t$errorRES2/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadCount( $experimentId ); }, $matchRE, $message);
+        }
+   }
+
+}
+
 
 # Data providers
 

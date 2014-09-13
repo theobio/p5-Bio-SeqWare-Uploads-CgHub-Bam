@@ -1218,15 +1218,15 @@ sub _metaGenerate_getDataReadCount {
         $readCoundSTH->finish();
         $readEnds = $rowHR->{'read_ends'};
         if (! defined $readEnds) {
-             die "Nothing retrieved from database.\n";
+             die "DbLookupError: Nothing retrieved from database.\n";
         }
         unless ($readEnds == 1 || $readEnds == 2) {
-             die "Found $readEnds read ends, expected 1 or 2.\n";
+             die "DbDataError: Found $readEnds read ends, expected 1 or 2.\n";
         }
     };
     if ($@) {
         my $error = $@;
-        dbDie( "DbReadCountException: Failed to retrieve the number of reads: $@" );
+        $self->dbDie( "DbReadCountException: Failed to retrieve the number of reads. Error was:\n\t$@" );
     }
 
     return $readEnds;
