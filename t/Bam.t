@@ -4,7 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 25;    # Main test module; run this many subtests
+use Test::More 'tests' => 27;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use Test::MockModule;            # Fake subroutine returns from other modules.
@@ -53,7 +53,8 @@ subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
 
 subtest( 'dbSetRunning()' => \&testDbSetRunning );
 subtest( 'dbDie()' => \&testDbDie );
-
+subtest( 'reformatTimestamp()' => \&testReformatTimestamp );
+subtest( 'getFileBaseName()' => \&testGetFileBaseName );
 
 sub testNew {
     plan( tests => 2 );
@@ -1387,6 +1388,62 @@ sub testCheckCompatibleHash {
 
 }
 
+sub testGetFileBaseName {
+    plan( tests => 35 );
+
+    # Filename parsing
+    is_deeply( [$CLASS->getFileBaseName( "base.ext"      )], ["base", "ext"        ], "base and extension"         );
+    is_deeply( [$CLASS->getFileBaseName( "base.ext.more" )], ["base",    "ext.more"], "base and extra extension"   );
+    is_deeply( [$CLASS->getFileBaseName( "baseOnly"      )], ["baseOnly", undef    ], "base only"                  );
+    is_deeply( [$CLASS->getFileBaseName( "base."         )], ["base",     ""       ], "base and dot, no extension" );
+    is_deeply( [$CLASS->getFileBaseName( ".ext"          )], ["",         "ext"    ], "hidden = extension only"    );
+    is_deeply( [$CLASS->getFileBaseName( "."             )], ["",          ""      ], "just dot"                   );
+    is_deeply( [$CLASS->getFileBaseName( ""              )], ["",          undef   ], "empty"                      );
+
+    # Path parsing
+    is_deeply( [$CLASS->getFileBaseName( "dir/to/base.ext"       )], ["base", "ext" ], "relative dir to file"   );
+    is_deeply( [$CLASS->getFileBaseName( "/abs/dir/to/base.ext"  )], ["base", "ext" ], "abssolute dir to file"  );
+    is_deeply( [$CLASS->getFileBaseName( "is/dir/base.ext/"      )], ["",     undef ], "relative dir, not file" );
+    is_deeply( [$CLASS->getFileBaseName( "/is/abs/dir/base.ext/" )], ["",     undef ], "absolute dir, not file" );
+    is_deeply( [$CLASS->getFileBaseName( "is/dir/base.ext/."     )], ["",     undef ], "relative dir, ends with /." );
+    is_deeply( [$CLASS->getFileBaseName( "/is/abs/dir/base.ext/.")], ["",     undef ], "absolute dir, ends with /." );
+
+    # Undefined input
+    throws_ok( sub { $CLASS->getFileBaseName(); }, qr/^BadParameterException: Undefined parmaeter, getFileBaseName\(\)\./, "Undefined param");
+
+    # Filename parsing with spaces
+    is_deeply( [$CLASS->getFileBaseName( " . "   )], [" ", " "  ], "base and extension are space"            );
+    is_deeply( [$CLASS->getFileBaseName( " . . " )], [" ", " . "], "base and each extra extension are space" );
+    is_deeply( [$CLASS->getFileBaseName( " "     )], [" ", undef], "base only, is space"                     );
+    is_deeply( [$CLASS->getFileBaseName( " ."    )], [" ", ""   ], "base as space and dot, no extension"     );
+    is_deeply( [$CLASS->getFileBaseName( ". "    )], ["",  " "  ], "hidden space = extension only"           );
+
+    # Path parsing
+    is_deeply( [$CLASS->getFileBaseName( "dir/to/ . "           )], [" ",    " "   ], "relative path, files are space"  );
+    is_deeply( [$CLASS->getFileBaseName( "dir/ /base.ext"       )], ["base", "ext" ], "relative path with space"        );
+    is_deeply( [$CLASS->getFileBaseName( " /to/base.ext"        )], ["base", "ext" ], "relative path start with space"  );
+    is_deeply( [$CLASS->getFileBaseName( "/abs/dir/to/ . "      )], [" ",    " "   ], "absolute path, files are spacee" );
+    is_deeply( [$CLASS->getFileBaseName( "/abs/dir/ /base.ext"  )], ["base", "ext" ], "absolute path with sapce"        );
+    is_deeply( [$CLASS->getFileBaseName( "dir/ /base.ext/"      )], ["",     undef ], "relative dir with space"         );
+    is_deeply( [$CLASS->getFileBaseName( " /to/base.ext/"       )], ["",     undef ], "relative dir starts with space"  );
+    is_deeply( [$CLASS->getFileBaseName( "/abs/dir/ /base.ext/" )], ["",     undef ], "absolute dir with space"         );
+
+    # Extra dots
+    is_deeply( [$CLASS->getFileBaseName( "base..ext" )], ["base", ".ext" ], "base .. extension"           );
+    is_deeply( [$CLASS->getFileBaseName( "base.."    )], ["base", "."    ], "base and .., no extension"   );
+    is_deeply( [$CLASS->getFileBaseName( "..ext"     )], ["",     ".ext" ], "no base, .., extension only" );
+    is_deeply( [$CLASS->getFileBaseName( ".."        )], ["",     "."    ], "just .."                     );
+
+    # Path parsing with double dots
+    is_deeply( [$CLASS->getFileBaseName( "dir/to/.."       )], ["", undef ], "relative path, .. file"  );
+    is_deeply( [$CLASS->getFileBaseName( "/abs/dir/to/.."  )], ["", undef ], "absolute path, .. file"  );
+    is_deeply( [$CLASS->getFileBaseName( "is/dir/../"      )], ["", undef ], "relative dir, .. as dir" );
+    is_deeply( [$CLASS->getFileBaseName( "/is/abs/dir/../" )], ["", undef ], "absolute dir, .. as dir" );
+
+    # Multiple Spaces
+
+}
+
 sub testGetLogPrefix {
     plan( tests => 2);
 
@@ -1650,6 +1707,36 @@ sub testDbDie {
             my $message = "dbh still exists";
             ok(exists $obj->{'dbh'}, $message);
         }
+    }
+
+}
+
+sub testReformatTimestamp {
+
+    plan( tests => 3 );
+
+    {
+        my $testDesc = "timestamp reformated for postgress.";
+        my $timestamp = "2013-09-08 15:16:17";
+        my $want = "2013-09-08T15:16:17";
+        my $got = $CLASS->reformatTimestamp( $timestamp );
+        is( $got, $want, $testDesc );
+    }
+    {
+        my $testDesc = "hig-res timestamp reformated for postgress.";
+        my $timestamp = "2013-09-08 15:16:17.2345";
+        my $want = "2013-09-08T15:16:17.2345";
+        my $got = $CLASS->reformatTimestamp( $timestamp );
+        is( $got, $want, $testDesc );
+    }
+    {
+        my $testDesc = "Bad parameter (timestamp not formatted correctly)";
+        my $badTimestamp = "2013-09-08_15:16:17.2345";
+        eval {
+            $CLASS->reformatTimestamp( $badTimestamp );
+        };
+        my $errorRE = qr/Incorectly formatted time stamp/;
+        like( $@, $errorRE, $testDesc );
     }
 
 }

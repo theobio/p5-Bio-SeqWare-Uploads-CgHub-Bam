@@ -84,8 +84,8 @@ sub new {
 
 =head2 getTimestamp()
 
-    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp().
-    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp( $unixTime ).
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimestamp().
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimestamp( $unixTime ).
 
 Returns a timestamp formated like YYYY-MM-DD_HH:MM:SS, zero padded, 24 hour
 time. If a parameter is passed, it is assumed to be a unix epoch time (integer
@@ -1128,7 +1128,7 @@ sub _metaGenerate_getData {
                 (Bio::SeqWare::Uploads::CgHub::Bam->getFileBaseName(
                     $rowHR->{'file_path'} ))[0],
             'analysis_date'   =>
-                Bio::SeqWare::Uploads::CgHub::Bam->reformatTimeStamp(
+                Bio::SeqWare::Uploads::CgHub::Bam->reformatTimestamp(
                     $rowHR->{'file_timestamp'} ),
         };
 
