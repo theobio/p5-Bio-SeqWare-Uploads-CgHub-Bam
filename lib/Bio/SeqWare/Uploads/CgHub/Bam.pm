@@ -241,6 +241,87 @@ sub checkCompatibleHash {
     return $bad;
 }
 
+=head2 reformatTimestamp()
+
+    my $newFormatTimestamp = $CLASS->reformatTimestamp( $timestamp );
+
+Takes a postgresql formatted timestamp (without time zone) and converts it to
+an aml time stamp by replacing the blank space between the date and time with
+a capital "T". Expects the incoming $timestamp to be formtted as
+C<qr/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\d{2}\.?\d*$/>
+
+=cut
+
+sub reformatTimestamp() {
+    my $class = shift;
+    my $pgdbTimestampNoTimeZone = shift;
+ 
+    if ($pgdbTimestampNoTimeZone !~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.?\d*$/ ) {
+        croak( "BadParameterException: Incorectly formatted time stamp: $pgdbTimestampNoTimeZone\n"
+             . ' expected 24 hour fromat like "YYYY-MM-DD HH:MM:SS.frac'
+              . " with optional part. No other spaces allowed.\n"
+        );
+    }
+
+    my $xmlFormatTimestamp = $pgdbTimestampNoTimeZone;
+    $xmlFormatTimestamp =~ s/ /T/;
+
+    return  $xmlFormatTimestamp;
+}
+
+=head2 getFileBaseName
+
+   my ($base, $ext) = $CLASS->getFileBaseName( "$filePath" );
+
+Given a $filePath, extracts the filename and returns the file base name $base
+and extension $ext. Everything up to the first "."  is returned as the $base,
+everything after as the $ext. $filePath may or may not include directories,
+relative or absolute, but the last element is assumed to be a filename (unless
+it ends with a directory marker, in which case it is treated the same as if
+$filePath was ""). If there is nothing before/after the ".", an empty string
+will be returned for the $base and/or $ext. If there is no ., $ext will be
+undef. Directory markers are "/", ".", or ".." on Unix
+
+=head3 Examples:
+
+             $filePath       $base        $ext
+    ------------------  ----------  ----------
+       "base.ext"           "base"       "ext"
+       "base.ext.more"      "base"  "ext.more"
+            "baseOnly"  "baseOnly"       undef
+           ".hidden"            ""    "hidden"
+       "base."              "base"          ""
+           "."                  ""          ""
+                    ""          ""       undef
+                 undef      (dies)            
+    "path/to/base.ext"      "base"       "ext"
+   "/path/to/base.ext"      "base"       "ext"
+    "path/to/"              ""           undef
+    "path/to/."             ""           undef
+    "path/to/.."            ""           undef
+
+=cut
+
+sub getFileBaseName {
+
+    my $class = shift;
+    my $path = shift;
+
+    if (! defined $path) {
+        croak "BadParameterException: Undefined parmaeter, getFileBaseName().\n";
+    }
+
+    my ($vol, $dir, $file) = File::Spec->splitpath( $path );
+    if ($file eq "") { return ("", undef); }
+    $file =~ /^([^\.]*)(\.?)(.*)$/;
+    my ($base, $ext);
+    if ($2 eq '.') { ($base, $ext) = ("", ""); }
+    if ($1)        { $base = $1; }
+    if ($3)        { $ext  = $3; }
+    return ($base, $ext);
+}
+
+
 =head1 INSTANCE METHODS
 
 =cut
@@ -267,6 +348,7 @@ sub run {
     }
     return 1;
 }
+
 
 =head1 INTERNAL METHODS
 
@@ -684,6 +766,24 @@ Not intended to be called directly.
 
 sub do_meta_generate {
     my $self = shift;
+    my $uploadHR;
+    eval {
+        my $uploadHR = $self->dbSetRunning( 'launch', 'meta' );
+        if ($uploadHR)  {
+            my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, "analysis.xml",   "analysis_fastq.xml.template" );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, "run.xml",        "run_fastq.xml.template" );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, "experiment.xml", "experiment_fastq.xml.template" );
+            $self->dbSetDone( $uploadHR->{'upload_id'}, 'meta');
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        if ($uploadHR) {
+            $error = $self->dbSetFail( $uploadHR, 'meta', $error);
+        }
+        dbDie($error);
+    }
     return 1;
 }
 
@@ -802,8 +902,8 @@ sub dbSetFail {
     eval{
         $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
     };
-    my $alsoError = $@;
-    if ($alsoError) {
+    if ($@) {
+        my $alsoError = $@;
         $error = $alsoError . "\tTried to fail run because of:\n$error";
     }
     return $error;
@@ -950,6 +1050,246 @@ sub _launch_prepareUploadInfo {
    );
 
    return \%upload;
+}
+
+=head2 _metaGenerate_getData
+
+    $self->_metaGenerate_getData()
+
+=cut
+
+sub _metaGenerate_getData {
+    my $self = shift;
+    my $uploadHR = shift;
+
+    my $dbh = $self->getDbh();
+    my $upload_id = $uploadHR->{'upload_id'};
+
+    my $selectAllSQL =
+       "SELECT vf.tstmp             as file_timestamp,
+               vf.tcga_uuid         as sample_tcga_uuid,
+               l.sw_accession       as lane_accession,
+               vf.file_sw_accession as file_accession,
+               vf.md5sum            as file_md5sum,
+               vf.file_path,
+               u.metadata_dir       as upload_basedir,
+               u.cghub_analysis_id  as upload_uuid,
+               e.sw_accession       as experiment_accession,
+               s.sw_accession       as sample_accession,
+               e.description        as experiment_description,
+               e.experiment_id,
+               p.instrument_model,
+               u.sample_id,
+               s.preservation
+        FROM upload u, upload_file uf, vw_files vf, lane l, experiment e, sample s, platform p
+        WHERE u.upload_id = ?
+          AND u.upload_id = uf.upload_id
+          AND uf.file_id = vf.file_id
+          AND vf.lane_id = l.lane_id
+          AND s.sample_id = u.sample_id
+          AND e.experiment_id = s.experiment_id
+          AND e.platform_id = p.platform_id";
+
+
+    my $data = {};
+    eval {
+        my $selectionSTH = $dbh->prepare( $selectAllSQL );
+        $selectionSTH->execute( $upload_id );
+        my $rowHR = $selectionSTH->fetchrow_hashref();
+        $selectionSTH->finish();
+
+        my $fileName = (File::Spec->splitpath( $rowHR->{'file_path'} ))[2];
+        my $localFileLink =
+            "UNCID_"
+            . $rowHR->{'file_accession'} . '.'
+            . $rowHR->{'sample_tcga_uuid'} . '.'
+            . $fileName;
+
+        $data = {
+            'program_version'      => $VERSION,
+            'sample_tcga_uuid'     => $rowHR->{'sample_tcga_uuid'},
+            'lane_accession'       => $rowHR->{'lane_accession'},
+            'file_md5sum'          => $rowHR->{'file_md5sum'},
+            'file_accession'       => $rowHR->{'file_accession'},
+            'upload_file_name'     => $localFileLink,
+            'uploadIdAlias'        => "upload $upload_id",
+            'experiment_accession' => $rowHR->{'experiment_accession'},
+            'sample_accession'     => $rowHR->{'sample_accession'},
+            'experiment_description' => $rowHR->{'experiment_description'},
+            'instrument_model'     => $rowHR->{'instrument_model'},
+            'preservation'         => 'FROZEN',
+            'read_ends'        => 
+                $self->_metaGenerae_getDataReadCount(
+                    $dbh, $rowHR->{'experiment_id'} ),
+            'base_coord'   => -1  +
+                $self->_getTemplateDataReadLength(
+                    $dbh, $rowHR->{'sample_id'} ),
+            'file_path_base'  => 
+                (Bio::SeqWare::Uploads::CgHub::Bam->getFileBaseName(
+                    $rowHR->{'file_path'} ))[0],
+            'analysis_date'   =>
+                Bio::SeqWare::Uploads::CgHub::Bam->reformatTimeStamp(
+                    $rowHR->{'file_timestamp'} ),
+        };
+
+        if ($rowHR->{'preservation'} && $rowHR->{'preservation'} eq 'FFPE') {
+            $data->{'preservation'} = 'FFPE';
+        }
+        if ($data->{'read_ends'} == 1) {
+            $data->{'library_layout'} = 'SINGLE';
+        }
+        elsif ($data->{'read_ends'} == 2) {
+            $data->{'library_layout'} = 'PAIRED';
+        }
+        else {
+            $self->{'error'} = 'bad_read_ends';
+            croak("XML only defined for read_ends 1 or 2, not $data->{'read_ends'}\n");
+        }
+        $data->{'library_prep'} = 'Illumina TruSeq';
+
+        if ($self->{'verbose'}) {
+            my $message = "Template Data:\n";
+            for my $key (sort keys %$data) {
+                $message .= "\t\"$key\" = \"$data->{$key}\"\n";
+            }
+            $self->sayVerbose( $message );
+        }
+
+        for my $key (sort keys %$data) {
+            if (! defined $data->{$key} || length $data->{$key} == 0) {
+                $self->{'error'} = "missing_template_data_$key";
+                croak("No value obtained for template data element \'$key\'\n");
+            }
+        }
+
+        $self->{'_fastqUploadDir'} = File::Spec->catdir(
+                    $rowHR->{'fastq_upload_basedir'},
+                    $rowHR->{'fastq_upload_uuid'},
+        );
+        if (! -d $self->{'_fastqUploadDir'}) {
+            $self->{'error'} = 'dir_fastqUpload_missing';
+            die("Can't find fastq upload targed directory \"$data->{'_fastqUploadDir'}\"\n");
+        }
+
+        symlink( $rowHR->{'file_path'}, File::Spec->catfile( $self->{'_fastqUploadDir'}, $localFileLink ));
+        $self->sayVerbose("Created local link \"$localFileLink\"");
+    };
+    if ($@) {
+        my $error = $@;
+        $self->dbDie("MetaDataGenerateException: Failed collecting data for template use: $error");
+    }
+
+    return $data;
+}
+
+=head2 _metaGenerate_getDataReadCount
+
+    $ends = $self->_metaGenerate_getDataReadCount( $eperiment.sw_accession );
+
+Returns 1 if single ended, 2 if paired-ended. Based on the number
+of application reads in the associated experiment_spot_design_read_spec.
+Dies if any other number found, or if any problem with db access.
+
+=cut
+
+sub _metaGenerate_getDataReadCount {
+
+    my $self         = shift;
+    my $experimentId = shift;
+
+    my $dbh = $self->getDbh();
+
+    my $readCountSQL = 
+        "SELECT count(*) as read_ends
+         FROM experiment_spot_design_read_spec AS rs,
+                        experiment_spot_design AS d,
+                                    experiment AS e
+         WHERE  e.experiment_id                 = ?
+           AND  e.experiment_spot_design_id     = d.experiment_spot_design_id
+           AND rs.experiment_spot_design_id     = d.experiment_spot_design_id
+           AND rs.read_class                    =  'Application Read'
+           AND rs.read_type                    !=  'BarCode'";
+
+    my $readEnds;
+    eval {
+        my $readCoundSTH = $dbh->prepare( $readCountSQL );
+        $readCoundSTH->execute( $experimentId );
+        my $rowHR = $readCoundSTH->fetchrow_hashref();
+        $readCoundSTH->finish();
+        $readEnds = $rowHR->{'read_ends'};
+        if (! defined $readEnds) {
+             die "Nothing retrieved from database.\n";
+        }
+        unless ($readEnds == 1 || $readEnds == 2) {
+             die "Found $readEnds read ends, expected 1 or 2.\n";
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        dbDie( "DbReadCountException: Failed to retrieve the number of reads: $@" );
+    }
+
+    return $readEnds;
+}
+
+=head2 _metaGenerate_getDataReadLength
+
+   $baseCountPerRead = _metaGenerate_getDataReadLength( $bam_file_path );
+
+Examines first 1000 lines of the bam file and returns the length of the
+longest read found.
+
+=cut
+
+sub _metaGenerate_getDataReadLength {
+
+    my $self = shift;
+    my $bamFile = shift;
+
+    my $SAMTOOLS_EXEC = '/datastore/tier1data/nextgenseq/seqware-analysis/software/samtools/samtools';
+    my $MIN_READ_LENGTH = 17;
+    my $readLength = 0;
+
+    eval {
+        if (! defined $bamFile) {
+             die "BadParameterException: Bam file name undefined.\n";
+        }
+        unless (-f $bamFile) {
+             die "BadParameterException: No such File: \"$bamFile\"\n";
+        }
+
+        my $command = "$SAMTOOLS_EXEC view $bamFile | head -1000 | cut -f 10";
+        $self->sayVerbose( "READ LENGTH COMMAND: \"$command\"" );
+        my $readStr = qx/$command/;
+
+        if ($?) {
+            die ("SamtoolsFailedException: Error getting reads. Exit error code: $?. Failure message was:\n$!"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        if (! $readStr) {
+            $self->{'error'} = "";
+            die( "SamtoolsExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        my @reads = split (/\n/, $readStr);
+        foreach my $read (@reads) {
+            my $length = length($read);
+            if ($length > $readLength) {
+                $readLength = $length;
+            }
+        }
+
+        if ( $readLength < $MIN_READ_LENGTH ) {
+            $self->{'error'} = "low-read-length";
+            die( "SamtoolsShortReadException: Max read length to short, was: $readLength.\n" );
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        die ( "ReadLengthException: Can't determine bam max read length because:\n\t$error" );
+    }
+
+    return $readLength;
 }
 
 =head2 dbInsertUpload
@@ -1498,7 +1838,6 @@ Note: you must have a GitHub account to submit issues. Basic accounts are free.
 This module was developed for use with L<SeqWare | http://seqware.github.io>.
 
 =cut
-
 
 =head1 LICENSE AND COPYRIGHT
 
