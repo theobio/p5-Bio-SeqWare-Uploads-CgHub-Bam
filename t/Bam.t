@@ -26,40 +26,47 @@ my $SAMPLE_FILE_BAM = File::Spec->catfile( $TEST_DATA_DIR, "samplesToUpload.txt"
 my $SAMPLE_FILE = File::Spec->catfile( $TEST_DATA_DIR, "sampleList.txt" );
 my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 status-local);
 
-# Run these tests
-subtest( 'new()'      => \&testNew );
-subtest( 'run()'      => \&testRun );
-subtest( 'parseCli()'    => \&testParseCli    );
-subtest( 'loadOptions()'   => \&testLoadOptions );
-
-subtest( 'loadArguments()' => \&testLoadArguments );
+# Class helper (utility) subroutine tests
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
-subtest( 'getConfigOptions()' => \&testGetConfigOptions );
-subtest( 'say(),sayDebug(),SayVerbose(),sayError()' => \&testSayAndSayDebugAndSayVerboseAndSayError );
 subtest( 'getUuid()'     => \&testGetUuid    );
 subtest( 'getTimestamp()' => \&testGetTimestamp);
-subtest( 'getLogPrefix()' => \&testGetLogPrefix);
-subtest( 'logifyMessage()' => \&testLogifyMessage);
-subtest( 'parseSampleFile()' => \&testParseSampleFile);
-subtest( 'getDbh()'  => \&testGetDbh);
-subtest( 'DESTROY()' => \&testDESTROY );
-subtest( 'dbSetUploadStatus()' => \&testDbSetUploadStatus );
-subtest( 'dbSetDone()' => \&testDbSetDone );
-subtest( 'dbSetFail()' => \&testDbSetFail );
 subtest( 'getErrorName()' => \&testGetErrorName );
-subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
-subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
-
-subtest( 'dbSetRunning()' => \&testDbSetRunning );
-subtest( 'dbDie()' => \&testDbDie );
 subtest( 'reformatTimestamp()' => \&testReformatTimestamp );
 subtest( 'getFileBaseName()' => \&testGetFileBaseName );
 
+# Main processing/API (infrastructure) tests
+subtest( 'new()'      => \&testNew );
+subtest( 'run()'      => \&testRun );
+subtest( 'getDbh()'  => \&testGetDbh);
+subtest( 'DESTROY()' => \&testDESTROY );
+subtest( 'parseSampleFile()' => \&testParseSampleFile);
+
+# CLI (infrastructure) tests
+subtest( 'parseCli()'    => \&testParseCli    );
+subtest( 'loadOptions()'   => \&testLoadOptions );
+subtest( 'loadArguments()' => \&testLoadArguments );
+subtest( 'getConfigOptions()' => \&testGetConfigOptions );
+
+# Reporting (infrastructure) tests
+subtest( 'say(),sayDebug(),SayVerbose(),sayError()' => \&testSayAndSayDebugAndSayVerboseAndSayError );
+subtest( 'getLogPrefix()' => \&testGetLogPrefix);
+subtest( 'logifyMessage()' => \&testLogifyMessage);
+
+# Database (infrastructure) tests
+subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
+subtest( 'dbSetUploadStatus()' => \&testDbSetUploadStatus );
+subtest( 'dbSetRunning()' => \&testDbSetRunning );
+subtest( 'dbSetDone()' => \&testDbSetDone );
+subtest( 'dbSetFail()' => \&testDbSetFail );
+subtest( 'dbDie()' => \&testDbDie );
+
+# Validation tests
 subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
 subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
 subtest( 'ensureHashHasValue()' => \&testEnsureHashHasValue );
 subtest( 'ensureIsFile()' => \&testEnsureIsFile );
 subtest( 'ensureIsDir()' => \&testEnsureIsDir );
+subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
 
 
 sub testNew {
@@ -1117,7 +1124,7 @@ sub testSayAndSayDebugAndSayVerboseAndSayError {
         my $uuidRES = '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}';
         my $hostRES = '[^\s]+';
         my $prefxRES = $hostRES . ' ' . $timestampRES . ' ' . $uuidRES;
-        
+
         {
             my $expectRE = qr/^$prefxRES \[DEBUG\] $text\n$/m;
             stdout_like { $obj->sayDebug(   $text ); } $expectRE, "--debug and sayDebug";
@@ -1298,7 +1305,7 @@ sub testEnsureIsDefined {
 }
 
 sub testEnsureHashHasValue {
-    plan( tests => 30);
+    plan( tests => 36);
 
     my $weirdKey = '  @  ';
     my $falseKey = '';
@@ -1416,6 +1423,36 @@ sub testEnsureHashHasValue {
             throws_ok( sub { $CLASS->ensureHashHasValue( undef, $weirdKey ) }, $defaultUndefRE, $message);
         }
     }
+
+    # Errors with not a hash ref hash ref
+    {
+        my $defaultUndefRE = qr/^ValueNotHashRefException: Expected a hash-ref\.\n/m;
+        {
+            my $message = "Throws specified error if array ref (not hash ref), normal key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( [], $normalKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if object (not hash ref), false key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( makeBam(), $falseKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if string (not hash ref), weird key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( "I am a String", $weirdKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if array ref and not hash ref, normal key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( [], $normalKey ) }, $defaultUndefRE, $message);
+        }
+        {
+            my $message = "Throws default error if object (not hash ref), false key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( makeBam(), $falseKey ) }, $defaultUndefRE, $message);
+        }
+        {
+            my $message = "Throws default error if string (not hash ref), weird key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( "I am a String", $weirdKey ) }, $defaultUndefRE, $message);
+        }
+    }
+
     # Errors with missing keys
     {
         my $someHR = {};
@@ -1480,6 +1517,7 @@ sub testEnsureHashHasValue {
             throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $weirdKey ) }, $defaultNoValueErrorRE, $message);
         }
     }
+
 }
 
 sub testEnsureIsDir {

@@ -16,6 +16,7 @@ use File::Spec::Functions qw(catfile);  # Generic file handling.
 use IO::File ;     # File io using variables as fileHandles.
                    # Note: no errors on open failure.
 use Scalar::Util qw( blessed );  # Get class of objects
+use File::Path;    # Create file paths
 
 # Cpan modules
 use File::HomeDir qw(home);             # Finding the home directory is hard.
@@ -188,6 +189,12 @@ sub ensureHashHasValue {
     if (! defined $hashHR) {
         if (! defined $error) {
             $error = "ValueNotDefinedException: Expected a defined hash/hash-ref.\n";
+        }
+        die $error;
+    }
+    if (ref( $hashHR ) ne 'HASH') {
+        if (! defined $error) {
+            $error = "ValueNotHashRefException: Expected a hash-ref.\n";
         }
         die $error;
     }
@@ -1390,10 +1397,11 @@ sub _metaGenerate_getDataReadLength {
 
     my $dataDir = $self->_metaGenerate_makeDataDir( $dataHR );
 
-Creates the target directory $dataHR->{'dataDir'} which should just be
+Creates the target data directory which should just be
 catdir ($dataHR->{'metadata_dir'}, $dataHR->{'cghub_analysis_id'});
-This is validated and the pre-existance of $dataHR->{'metadata_dir'} is
-checked. If succeeds, returns the dataDir, else dies with error.
+The pre-existance of $dataHR->{'metadata_dir'} is
+checked. If succeeds, returns the name of the new dataDir, else dies
+with error.
 
 =cut
 
@@ -1401,45 +1409,34 @@ sub _metaGenerate_makeDataDir {
     my $self = shift;
     my $dataHR = shift;
 
-    if (! defined $dataHR->{'metadata_dir'}) {
-        die("BadDataException: Undefined metaDataDir.\n");
-    }
-    my $baseDir = $dataHR->{'metadata_dir'};
-    if (! -d $baseDir) {
-        die("BadDataException: can't find metadata_dir \"$baseDir\".\n");
-    }
+    my $baseDir     = $CLASS->ensureHashHasValue( $dataHR, 'metadata_dir');
+    my $analysisId  = $CLASS->ensureHashHasValue( $dataHR, 'cghub_analysis_id');
+    $CLASS->ensureIsDir( $baseDir );
 
-    if (! defined $dataHR->{'cghub_analysis_id'}) {
-        die("BadDataException: Undefined cghub_analysis_id.\n");
+    my $wantDir = File::Spec->catdir( $baseDir, $analysisId );
+
+    eval {
+        mkpath($wantDir, { mode => 0775 });
+    };
+    if ($@) {
+        my $error = $@;
+        die "CreateDirectoryException: Unable to create path \"$wantDir\". Error was:\n\t$error";
     }
-    my $analysisDir = $dataHR->{'cghub_analysis_id'};
-
-    if (! defined $dataHR->{'data_dir'}) {
-        die( "BadDataException: Undefined data_dir.n");
-    }
-    my $dataDir = $dataHR->{'data_dir'};
-
-    my $wantDir = File::Spec::catdir( $baseDir, $analysisDir );
-    if ($dataDir ne $wantDir) {
-       die( "BadDataException: Inconsistant data directories: Told \"$dataDir\" but calculated \"$wantDir\".\n" );
-    }
-
-    mkpath($dataDir, { mode => 0775 })
-        or die "CreateDirectoryException: Unable to create path \"$dataDir\". Error was:\n\t$! ";
-
-    return $dataDir;
+    return $wantDir;
 }
 
 =head2 _metaGenerate_linkBam
 
     my $bamLink = $self->_metaGenerate_linkBam( $dataHR );
 
-Creates a link to $dataHR->{'file_path'} in the data dir $dataHR->{'dataDir'};
-The link is named as required for the filename to upload to cghub, the name
-stored in $dataHR->{'localLinkName'}
+Creates a link to $dataHR->{'file_path'} in the $dataHR->{'dataDir'}.
+The file_path and the dataDir must exist. The link is named after the
+<filename> extracted from the file_path, The <file_accession>, and the
+<sample_tcga_uuid> as
 
-'UNCID_' "file_accession" . '.' . "sample_tcga_uuid" . '.' . "fileName"
+  UNCID_<file_accession>.<sample_tcga_uuid>.<filename.
 
+The link name only (no path) will be returned.
 
 =cut
 
@@ -1447,12 +1444,20 @@ sub _metaGenerate_linkBam {
     my $self = shift;
     my $dataHR = shift;
 
-    my $targetFile = $CLASS->ensureHashHasValue ($dataHR, 'file_path');
+    my $targetFile       = $CLASS->ensureHashHasValue($dataHR, 'file_path'       );
+    my $linkDir          = $CLASS->ensureHashHasValue($dataHR, 'dataDir'         );
+    my $file_accession   = $CLASS->ensureHashHasValue($dataHR, 'file_accession'  );
+    my $sample_tcga_uuid = $CLASS->ensureHashHasValue($dataHR, 'sample_tcga_uuid');
     $CLASS->ensureIsFile( $targetFile );
-    my $sourceDir = $CLASS->ensureHashHasValue ($dataHR, 'dataDir');
-    $CLASS->ensureIsDir( $sourceDir );
-    my $sourceFile = $CLASS->ensureHashHasValue($dataHR, 'localLinkFile');
-    symlink( $targetFile, File::Spec->catfile( $sourceDir, $sourceFile ));
+    $CLASS->ensureIsDir(  $linkDir    );
+
+    my $fileName = (File::Spec->splitpath( $dataHR->{'file_path'} ))[2];
+    my $linkName =
+        "UNCID_" . $file_accession . '.' . $sample_tcga_uuid . '.' . $fileName;
+    my $link_path = File::Spec->catfile( $linkDir, $linkName );
+    symlink( $targetFile, $link_path)
+        or die "CreateLinkException: Could not create symlink named \"$link_path\" pointing to \"$targetFile\". Error was:\t\n$!";
+    return $linkName;
 }
 
 =head2 dbInsertUpload
