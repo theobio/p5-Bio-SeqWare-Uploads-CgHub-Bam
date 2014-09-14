@@ -1418,6 +1418,7 @@ sub _metaGenerate_makeDataDir {
     eval {
         mkpath($wantDir, { mode => 0775 });
     };
+
     if ($@) {
         my $error = $@;
         die "CreateDirectoryException: Unable to create path \"$wantDir\". Error was:\n\t$error";
@@ -1455,8 +1456,15 @@ sub _metaGenerate_linkBam {
     my $linkName =
         "UNCID_" . $file_accession . '.' . $sample_tcga_uuid . '.' . $fileName;
     my $link_path = File::Spec->catfile( $linkDir, $linkName );
-    symlink( $targetFile, $link_path)
-        or die "CreateLinkException: Could not create symlink named \"$link_path\" pointing to \"$targetFile\". Error was:\t\n$!";
+    eval {
+        symlink( $targetFile, $link_path);
+    };
+    if ($@) {
+        my $error = $@;
+        die "CreateLinkException: Could not create symlink:\n"
+        . "\tLink: \"$link_path\"\n"
+        . "\tPointing to: \"$targetFile\". Error was:\t\n$error\n";
+    }
     return $linkName;
 }
 

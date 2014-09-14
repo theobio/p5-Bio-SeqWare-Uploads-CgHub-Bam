@@ -7,7 +7,7 @@ use File::Spec;
 use File::Copy;
 
 use File::Temp;                      # Simple files for testing
-use Test::More 'tests' => 3;     # Main test module; run this many tests
+use Test::More 'tests' => 4;     # Main test module; run this many tests
 use Test::Exception;
 
 BEGIN {
@@ -53,7 +53,7 @@ copy($GOOD_RUN_XML_FILE, $FAKE_BAM_FILE) or die "Can't copy file for testing";
 subtest( '_metaGenerate_getDataReadLength()' => \&test_metaGenerate_getDataReadLength );
 subtest( '_metaGenerate_getDataReadCount()' => \&test_metaGenerate_getDataReadCount );
 # subtest( '_metaGenerate_getData()' => \&test_metaGenerate_getData );
-# subtest( '_metaGenerate_linkBam()' => \&test_metaGenerate_linkBam );
+subtest( '_metaGenerate_linkBam()' => \&test_metaGenerate_linkBam );
 subtest( '_metaGenerate_makeDataDir()' => \&test_metaGenerate_makeDataDir );
 
 sub test_metaGenerate_makeDataDir {
@@ -389,9 +389,73 @@ sub test_metaGenerate_getData {
 }
 
 sub test_metaGenerate_linkBam {
-    plan( tests => 1 );
-    my $dataHR = {};
+    plan( tests => 6 );
 
+    my $obj = makeBamForMetaGenerate();
+    {
+        my $dataHR = {
+            'file_path' => $FAKE_BAM_FILE, 'dataDir' => $TEMP_DIR,
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        my $filename = 'fake.bam';
+        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
+        my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
+        {
+            ok(! -l $wantLinkPath, "Link doesn't pre-exist");
+        }
+        {
+            my $message = 'Link file name is returned correctly';
+            my $want = $wantLinkName;
+            my $got = $obj->_metaGenerate_linkBam( $dataHR );
+            is($got, $want, $message);
+        }
+        {
+            ok(-l $wantLinkPath, "Link is created");
+            unlink( $wantLinkPath ) or die ("Deleting link $wantLinkPath failed. $!");
+        }
+    }
+    {
+        my $dataHR = {
+            'file_path' => $CLASS->getUuid(), 'dataDir' => $TEMP_DIR,
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        {
+            my $message = 'Error if file linked to does not exist';
+            my $error1RES = 'FileNotFoundException: Error looking up file ' . $dataHR->{'file_path'} . '\. Error was:';
+            my $errorRE = qr/^$error1RES\n\t/;
+            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
+        }
+    }
+    {
+        my $dataHR = {
+            'file_path' => $FAKE_BAM_FILE, 'dataDir' => $CLASS->getUuid(),
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        {
+            my $message = 'Error if dir link put in does not exist';
+            my $error1RES = 'DirNotFoundException: Error looking up directory ' . $dataHR->{'dataDir'} . '\. Error was:';
+            my $errorRE = qr/^$error1RES\n\t/;
+            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
+        }
+    }
+    {
+        my $dataHR = {
+            'file_path' => $FAKE_BAM_FILE, 'dataDir' => File::Temp->newdir(),
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        my $filename = 'fake.bam';
+        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
+        my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
+        {
+            my $message = 'Error if creating link fails';
+            chmod( 0555, $dataHR->{'dataDir'} );
+            my $error1RES = 'CreateLinkException: Could not create symlink:';
+            my $error2RES = 'Link: "' . $wantLinkPath . '"';
+            my $error3RES = 'Pointing to: "' . $dataHR->{'file_path'} . '"\. Error was:';
+            my $errorRE = qr/^$error1RES\n\t$error2RES\n\t$error3RES/m;
+            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
+        }
+    }
 }
 
 # Data providers
