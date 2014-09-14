@@ -4,7 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 27;    # Main test module; run this many subtests
+use Test::More 'tests' => 30;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use Test::MockModule;            # Fake subroutine returns from other modules.
@@ -20,9 +20,10 @@ use Bio::SeqWare::Db::Connection;  # Database handle generation, for mocking
 # This class tests ...
 use Bio::SeqWare::Uploads::CgHub::Bam;
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
-my $TEST_CFG = File::Spec->catfile( "t", "Data", "test with space.config" );
-my $SAMPLE_FILE_BAM = File::Spec->catfile( "t", "Data", "samplesToUpload.txt" );
-my $SAMPLE_FILE = File::Spec->catfile( "t", "Data", "sampleList.txt" );
+my $TEST_DATA_DIR = File::Spec->catdir( "t", "Data");
+my $TEST_CFG = File::Spec->catfile( $TEST_DATA_DIR, "test with space.config" );
+my $SAMPLE_FILE_BAM = File::Spec->catfile( $TEST_DATA_DIR, "samplesToUpload.txt" );
+my $SAMPLE_FILE = File::Spec->catfile( $TEST_DATA_DIR, "sampleList.txt" );
 my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 status-local);
 
 # Run these tests
@@ -47,14 +48,19 @@ subtest( 'dbSetDone()' => \&testDbSetDone );
 subtest( 'dbSetFail()' => \&testDbSetFail );
 subtest( 'getErrorName()' => \&testGetErrorName );
 subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
-subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
-subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
 subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
 
 subtest( 'dbSetRunning()' => \&testDbSetRunning );
 subtest( 'dbDie()' => \&testDbDie );
 subtest( 'reformatTimestamp()' => \&testReformatTimestamp );
 subtest( 'getFileBaseName()' => \&testGetFileBaseName );
+
+subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
+subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
+subtest( 'ensureHashHasValue()' => \&testEnsureHashHasValue );
+subtest( 'ensureIsFile()' => \&testEnsureIsFile );
+subtest( 'ensureIsDir()' => \&testEnsureIsDir );
+
 
 sub testNew {
     plan( tests => 2 );
@@ -1288,6 +1294,269 @@ sub testEnsureIsDefined {
     {
         my $message = "Dies with default message if value not defined and no error.";
         throws_ok( sub { $CLASS->ensureIsDefined( undef ) }, $expectDefaultErrorRE, $message);
+    }
+}
+
+sub testEnsureHashHasValue {
+    plan( tests => 30);
+
+    my $weirdKey = '  @  ';
+    my $falseKey = '';
+    my $normalKey = 'theKey';
+    my $testError = "FakeException: No so bad\n";
+    my $myErrorRE = qr/^$testError/m;
+
+    # Returns values
+    {
+        my $someHR = { "$weirdKey"  => 'weird', "$falseKey" => 'false', "$normalKey" => 'normal' };
+        {
+            my $message = "Returns value if hash key is normal (with error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $normalKey, $testError );
+            my $want = 'normal';
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is false (with error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $falseKey, $testError );
+            my $want = 'false';
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is weird (with error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $weirdKey, $testError );
+            my $want = 'weird';
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is normal (no error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $normalKey );
+            my $want = 'normal';
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is false (no error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $falseKey );
+            my $want = 'false';
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is weird (no error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $weirdKey );
+            my $want = 'weird';
+            is( $got, $want, $message)
+        }
+    }
+
+    # Returns false values
+    {
+        my $someHR = { "$weirdKey"  => 0, "$falseKey" => 0, "$normalKey" => 0 };
+        {
+            my $message = "Returns value if hash key is normal (with error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $normalKey, $testError );
+            my $want = 0;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is false (with error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $falseKey, $testError );
+            my $want = 0;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is weird (with error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $weirdKey, $testError );
+            my $want = 0;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is normal (no error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $normalKey );
+            my $want = 0;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is false (no error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $falseKey );
+            my $want = 0;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns value if hash key is weird (no error)";
+            my $got = $CLASS->ensureHashHasValue( $someHR, $weirdKey );
+            my $want = 0;
+            is( $got, $want, $message)
+        }
+    }
+    
+    # Errors with undefined hash ref
+    {
+        my $defaultUndefRE = qr/^ValueNotDefinedException: Expected a defined hash\/hash-ref\.\n/m;
+        {
+            my $message = "Throws specified error if hash ref undefined, normal key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( undef, $normalKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if hash ref undefined, false key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( undef, $falseKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if hash ref undefined, weird key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( undef, $weirdKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref undefined, normal key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( undef, $normalKey ) }, $defaultUndefRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref undefined, false key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( undef, $falseKey ) }, $defaultUndefRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref undefined, weird key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( undef, $weirdKey ) }, $defaultUndefRE, $message);
+        }
+    }
+    # Errors with missing keys
+    {
+        my $someHR = {};
+        my $defaultUndefRE = qr/^ValueNotDefinedException: Expected a defined hash\/hash-ref\.\n/m;
+        {
+            my $message = "Throws specified error if hash ref missing normal key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $normalKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if hash ref missing false key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $falseKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if hash ref missing weird key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $weirdKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref missing normal key";
+            my $defaultNoKeyErrorRE = qr/^KeyNotExistsException: Expected key $normalKey to exist.\n/m;
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $normalKey ) }, $defaultNoKeyErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref missing false key";
+            my $defaultNoKeyErrorRE = qr/^KeyNotExistsException: Expected key $falseKey to exist.\n/m;
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $falseKey ) }, $defaultNoKeyErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref missing weird key";
+            my $defaultNoKeyErrorRE = qr/^KeyNotExistsException: Expected key $weirdKey to exist.\n/m;
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $weirdKey ) }, $defaultNoKeyErrorRE, $message);
+        }
+    }
+
+    # Errors with undefined values.
+    {
+    my $someHR = { "$weirdKey"  => undef, "$falseKey" => undef, "$normalKey" => undef };
+        {
+            my $message = "Throws specified error if hash ref missing normal key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $normalKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if hash ref missing false key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $falseKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if hash ref missing weird key";
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $weirdKey, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref missing normal key";
+            my $defaultNoValueErrorRE = qr/ValueNotDefinedException: Expected a defined hash\/hash-ref value for key $normalKey.\n/m;
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $normalKey ) }, $defaultNoValueErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref missing false key";
+            my $defaultNoValueErrorRE = qr/ValueNotDefinedException: Expected a defined hash\/hash-ref value for key $falseKey.\n/m;
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $falseKey ) }, $defaultNoValueErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if hash ref missing weird key";
+            my $defaultNoValueErrorRE = qr/ValueNotDefinedException: Expected a defined hash\/hash-ref value for key $weirdKey.\n/m;
+            throws_ok( sub { $CLASS->ensureHashHasValue( $someHR, $weirdKey ) }, $defaultNoValueErrorRE, $message);
+        }
+    }
+}
+
+sub testEnsureIsDir {
+    plan( tests => 6);
+
+    my $dir = $TEST_DATA_DIR;
+    my $noSuchDir = File::Spec->catdir($CLASS->getUuid() , "textDir");
+    my $testError = "FakeException: No so bad\n";
+    my $myErrorRE = qr/^$testError/m;
+    my $defaultUndefErrorRE = qr/^ValueNotDefinedException: Expected a defined value.\n/m;
+    my $defaultNotFoundErrorRE = qr/^DirNotFoundException: Error looking up directory $noSuchDir. Error was:\n\t/m;
+    {
+        my $message = "Returns dir if dir exists (with error)";
+        my $got = $CLASS->ensureIsDir( $dir, $testError );
+        my $want = $dir;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns dir if dir exists (no error)";
+        my $got = $CLASS->ensureIsDir( $dir );
+        my $want = $dir;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Throws specified error if undefined";
+        throws_ok( sub { $CLASS->ensureIsDir( undef, $testError ) }, $myErrorRE, $message);
+    }
+    {
+        my $message = "Throws default error if undefined";
+        throws_ok( sub { $CLASS->ensureIsDir( undef ) }, $defaultUndefErrorRE, $message);
+    }
+    {
+        my $message = "Throws specified error if not found";
+        throws_ok( sub { $CLASS->ensureIsDir( $noSuchDir, $testError ) }, $myErrorRE, $message);
+    }
+    {
+        my $message = "Throws default error if not found";
+        throws_ok( sub { $CLASS->ensureIsDir( $noSuchDir ) }, $defaultNotFoundErrorRE, $message);
+    }
+}
+
+sub testEnsureIsFile {
+    plan( tests => 6);
+
+    my $file = $SAMPLE_FILE;
+    my $noSuchFile = $CLASS->getUuid() . ".txt";
+    my $testError = "FakeException: No so bad\n";
+    my $myErrorRE = qr/^$testError/m;
+    my $defaultUndefErrorRE = qr/^ValueNotDefinedException: Expected a defined value.\n/m;
+    my $defaultNotFoundErrorRE = qr/^FileNotFoundException: Error looking up file $noSuchFile. Error was:\n\t/m;
+    {
+        my $message = "Returns filename if file exists (with error)";
+        my $got = $CLASS->ensureIsFile( $file, $testError );
+        my $want = $file;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Returns filename if file exists (no error)";
+        my $got = $CLASS->ensureIsFile( $file );
+        my $want = $file;
+        is( $got, $want, $message)
+    }
+    {
+        my $message = "Throws specified error if undefined";
+        throws_ok( sub { $CLASS->ensureIsFile( undef, $testError ) }, $myErrorRE, $message);
+    }
+    {
+        my $message = "Throws default error if undefined";
+        throws_ok( sub { $CLASS->ensureIsFile( undef ) }, $defaultUndefErrorRE, $message);
+    }
+    {
+        my $message = "Throws specified error if not found";
+        throws_ok( sub { $CLASS->ensureIsFile( $noSuchFile, $testError ) }, $myErrorRE, $message);
+    }
+    {
+        my $message = "Throws default error if not found";
+        throws_ok( sub { $CLASS->ensureIsFile( $noSuchFile ) }, $defaultNotFoundErrorRE, $message);
     }
 }
 

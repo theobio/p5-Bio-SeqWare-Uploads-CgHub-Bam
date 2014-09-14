@@ -167,6 +167,46 @@ sub ensureIsDefined {
     return $value
 }
 
+=head2 ensureHashHasValue
+
+    my $val = $CLASS->ensureHashHasValue( $hashRef, $key, [$error] );
+
+Returns $hashRef->{"$key"} if it is defined, otherwise dies with $error.
+If $error is not defined, then dies with an appropriate message, one of:
+
+    "ValidationErrorNotDefined: Expected a defined hash/hash-ref.\n";
+    "ValidationErrorNotExists: Expected key $key to exist.\n";
+    "ValidationErrorNotDefined: Expected a defined hash/hash-ref value for key $key.\n";
+=cut
+
+sub ensureHashHasValue {
+    my $class = shift;
+    my $hashHR = shift;
+    my $key = shift;
+    my $error = shift;
+
+    if (! defined $hashHR) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined hash/hash-ref.\n";
+        }
+        die $error;
+    }
+    if (! exists $hashHR->{"$key"}) {
+        if (! defined $error) {
+            $error = "KeyNotExistsException: Expected key $key to exist.\n";
+        }
+        die $error;
+    }
+    if (! defined $hashHR->{"$key"}) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined hash/hash-ref value for key $key.\n"
+        }
+        die $error;
+    }
+
+    return $hashHR->{"$key"};
+}
+
 =head2 ensureIsntEmptyString
 
     my $val = $CLASS->ensureIsntEmptyString( $val, [$error] );
@@ -190,6 +230,68 @@ sub ensureIsntEmptyString {
         die $error;
     }
     return $value
+}
+
+=head2 ensureIsFile
+
+    my $filename = $CLASS->ensureIsFile( $filename, [$error] );
+
+Returns $filename if it is defined and -f works, otherwise dies with $error.
+If $error is not defined, then dies with error message:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "FileNotFoundException: Error looking up file named $filename. Error was:\n\t$!";
+
+=cut
+
+sub ensureIsFile {
+    my $class = shift;
+    my $filename = shift;
+    my $error = shift;
+    if (! defined $filename) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined value.\n";
+        }
+        die $error;
+    }
+    if (! -f $filename) {
+        if (! defined $error) {
+            $error = "FileNotFoundException: Error looking up file $filename. Error was:\n\t$!";
+        }
+        die $error;
+    }
+    return $filename;
+}
+
+=head2 ensureIsDir
+
+    my $dirname = $CLASS->ensureIsFile( $dirname, [$error] );
+
+Returns $dirname if it is defined and -d works, otherwise dies with $error.
+If $error is not defined, then dies with error message:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "FileNotFoundException: Error looking up file named $dirname. Error was:\n\t$!";
+
+=cut
+
+sub ensureIsDir {
+    my $class = shift;
+    my $dirname = shift;
+    my $error = shift;
+    if (! defined $dirname) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined value.\n";
+        }
+        die $error;
+    }
+    if (! -d $dirname) {
+        if (! defined $error) {
+            $error = "DirNotFoundException: Error looking up directory $dirname. Error was:\n\t$!";
+        }
+        die $error;
+    }
+    return $dirname;
 }
 
 =head2 checkCompatibleHash
@@ -320,7 +422,6 @@ sub getFileBaseName {
     if ($3)        { $ext  = $3; }
     return ($base, $ext);
 }
-
 
 =head1 INSTANCE METHODS
 
@@ -771,6 +872,8 @@ sub do_meta_generate {
         my $uploadHR = $self->dbSetRunning( 'launch', 'meta' );
         if ($uploadHR)  {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
+            $self->_metaGenerate_makeDataDir( $dataHR );
+            $self->_metaGenerate_linkBam( $dataHR );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, "analysis.xml",   "analysis_fastq.xml.template" );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, "run.xml",        "run_fastq.xml.template" );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, "experiment.xml", "experiment_fastq.xml.template" );
@@ -1072,8 +1175,8 @@ sub _metaGenerate_getData {
                vf.file_sw_accession as file_accession,
                vf.md5sum            as file_md5sum,
                vf.file_path,
-               u.metadata_dir       as upload_basedir,
-               u.cghub_analysis_id  as upload_uuid,
+               u.metadata_dir,
+               u.cghub_analysis_id,
                e.sw_accession       as experiment_accession,
                s.sw_accession       as sample_accession,
                e.description        as experiment_description,
@@ -1106,6 +1209,9 @@ sub _metaGenerate_getData {
             . $fileName;
 
         $data = {
+            'metadata_dir'         => $rowHR->{'metadata_dir'},
+            'cghub_analysis_id'    => $rowHR->{'cghub_analysis_id'},
+            'library_prep'         => 'Illumina TruSeq',
             'program_version'      => $VERSION,
             'sample_tcga_uuid'     => $rowHR->{'sample_tcga_uuid'},
             'lane_accession'       => $rowHR->{'lane_accession'},
@@ -1119,11 +1225,9 @@ sub _metaGenerate_getData {
             'instrument_model'     => $rowHR->{'instrument_model'},
             'preservation'         => 'FROZEN',
             'read_ends'        => 
-                $self->_metaGenerae_getDataReadCount(
-                    $dbh, $rowHR->{'experiment_id'} ),
+                $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} ),
             'base_coord'   => -1  +
-                $self->_getTemplateDataReadLength(
-                    $dbh, $rowHR->{'sample_id'} ),
+                $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} ),
             'file_path_base'  => 
                 (Bio::SeqWare::Uploads::CgHub::Bam->getFileBaseName(
                     $rowHR->{'file_path'} ))[0],
@@ -1135,6 +1239,7 @@ sub _metaGenerate_getData {
         if ($rowHR->{'preservation'} && $rowHR->{'preservation'} eq 'FFPE') {
             $data->{'preservation'} = 'FFPE';
         }
+
         if ($data->{'read_ends'} == 1) {
             $data->{'library_layout'} = 'SINGLE';
         }
@@ -1145,7 +1250,6 @@ sub _metaGenerate_getData {
             $self->{'error'} = 'bad_read_ends';
             croak("XML only defined for read_ends 1 or 2, not $data->{'read_ends'}\n");
         }
-        $data->{'library_prep'} = 'Illumina TruSeq';
 
         if ($self->{'verbose'}) {
             my $message = "Template Data:\n";
@@ -1162,16 +1266,6 @@ sub _metaGenerate_getData {
             }
         }
 
-        $self->{'_fastqUploadDir'} = File::Spec->catdir(
-                    $rowHR->{'fastq_upload_basedir'},
-                    $rowHR->{'fastq_upload_uuid'},
-        );
-        if (! -d $self->{'_fastqUploadDir'}) {
-            $self->{'error'} = 'dir_fastqUpload_missing';
-            die("Can't find fastq upload targed directory \"$data->{'_fastqUploadDir'}\"\n");
-        }
-
-        symlink( $rowHR->{'file_path'}, File::Spec->catfile( $self->{'_fastqUploadDir'}, $localFileLink ));
         $self->sayVerbose("Created local link \"$localFileLink\"");
     };
     if ($@) {
@@ -1290,6 +1384,75 @@ sub _metaGenerate_getDataReadLength {
     }
 
     return $readLength;
+}
+
+=head2 _metaGenerate_makeDataDir
+
+    my $dataDir = $self->_metaGenerate_makeDataDir( $dataHR );
+
+Creates the target directory $dataHR->{'dataDir'} which should just be
+catdir ($dataHR->{'metadata_dir'}, $dataHR->{'cghub_analysis_id'});
+This is validated and the pre-existance of $dataHR->{'metadata_dir'} is
+checked. If succeeds, returns the dataDir, else dies with error.
+
+=cut
+
+sub _metaGenerate_makeDataDir {
+    my $self = shift;
+    my $dataHR = shift;
+
+    if (! defined $dataHR->{'metadata_dir'}) {
+        die("BadDataException: Undefined metaDataDir.\n");
+    }
+    my $baseDir = $dataHR->{'metadata_dir'};
+    if (! -d $baseDir) {
+        die("BadDataException: can't find metadata_dir \"$baseDir\".\n");
+    }
+
+    if (! defined $dataHR->{'cghub_analysis_id'}) {
+        die("BadDataException: Undefined cghub_analysis_id.\n");
+    }
+    my $analysisDir = $dataHR->{'cghub_analysis_id'};
+
+    if (! defined $dataHR->{'data_dir'}) {
+        die( "BadDataException: Undefined data_dir.n");
+    }
+    my $dataDir = $dataHR->{'data_dir'};
+
+    my $wantDir = File::Spec::catdir( $baseDir, $analysisDir );
+    if ($dataDir ne $wantDir) {
+       die( "BadDataException: Inconsistant data directories: Told \"$dataDir\" but calculated \"$wantDir\".\n" );
+    }
+
+    mkpath($dataDir, { mode => 0775 })
+        or die "CreateDirectoryException: Unable to create path \"$dataDir\". Error was:\n\t$! ";
+
+    return $dataDir;
+}
+
+=head2 _metaGenerate_linkBam
+
+    my $bamLink = $self->_metaGenerate_linkBam( $dataHR );
+
+Creates a link to $dataHR->{'file_path'} in the data dir $dataHR->{'dataDir'};
+The link is named as required for the filename to upload to cghub, the name
+stored in $dataHR->{'localLinkName'}
+
+'UNCID_' "file_accession" . '.' . "sample_tcga_uuid" . '.' . "fileName"
+
+
+=cut
+
+sub _metaGenerate_linkBam {
+    my $self = shift;
+    my $dataHR = shift;
+
+    my $targetFile = $CLASS->ensureHashHasValue ($dataHR, 'file_path');
+    $CLASS->ensureIsFile( $targetFile );
+    my $sourceDir = $CLASS->ensureHashHasValue ($dataHR, 'dataDir');
+    $CLASS->ensureIsDir( $sourceDir );
+    my $sourceFile = $CLASS->ensureHashHasValue($dataHR, 'localLinkFile');
+    symlink( $targetFile, File::Spec->catfile( $sourceDir, $sourceFile ));
 }
 
 =head2 dbInsertUpload
