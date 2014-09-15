@@ -879,8 +879,8 @@ sub do_meta_generate {
         my $uploadHR = $self->dbSetRunning( 'launch', 'meta' );
         if ($uploadHR)  {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
-            $self->_metaGenerate_makeDataDir( $dataHR );
-            $self->_metaGenerate_linkBam( $dataHR );
+            $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
+            $dataHR->{'linkName'} = $self->_metaGenerate_linkBam( $dataHR );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, "analysis.xml",   "analysis_fastq.xml.template" );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, "run.xml",        "run_fastq.xml.template" );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, "experiment.xml", "experiment_fastq.xml.template" );
@@ -1177,20 +1177,25 @@ sub _metaGenerate_getData {
 
     my $selectAllSQL =
        "SELECT vf.tstmp             as file_timestamp,
-               vf.tcga_uuid         as sample_tcga_uuid,
-               l.sw_accession       as lane_accession,
+               vf.workflow_accession,
                vf.file_sw_accession as file_accession,
                vf.md5sum            as file_md5sum,
                vf.file_path,
-               u.metadata_dir,
-               u.cghub_analysis_id,
+               vf.workflow          as workflow_name,
+               vf.workflow_version,
+               vf.algorithm         as workflow_algorithm
+               p.instrument_model,
+               l.sw_accession       as lane_accession,
                e.sw_accession       as experiment_accession,
-               s.sw_accession       as sample_accession,
+               e.name               as library_prep
                e.description        as experiment_description,
                e.experiment_id,
-               p.instrument_model,
-               u.sample_id,
-               s.preservation
+               s.sw_accession       as sample_accession,
+               s.tcga_uuid,
+               s.preservation,
+               u.metadata_dir,
+               u.cghub_analysis_id,
+               u.sample_id
         FROM upload u, upload_file uf, vw_files vf, lane l, experiment e, sample s, platform p
         WHERE u.upload_id = ?
           AND u.upload_id = uf.upload_id
@@ -1201,12 +1206,29 @@ sub _metaGenerate_getData {
           AND e.platform_id = p.platform_id";
 
 
-    my $data = {};
+    my $dataHR;
     eval {
         my $selectionSTH = $dbh->prepare( $selectAllSQL );
         $selectionSTH->execute( $upload_id );
         my $rowHR = $selectionSTH->fetchrow_hashref();
         $selectionSTH->finish();
+
+        # Load data for run.xml
+        my $runDataHR = {
+            'lane_accession'       => $rowHR->{'lane_accession'},
+            'experiment_accession' => $rowHR->{'experiment_accession'},
+            'sample_accession'     => $rowHR->{'sample_accession'},
+            'tcga_uuid'            => $rowHR->{'tcga_uuid'},
+        };
+
+        # Prepare data for analysis.xml
+        my $uploadIdAlias = "upload_" . $upload_id;
+
+        my $analysisDate = $CLASS->reformatTimestamp( $rowHR->{'file_timestamp'} );
+
+        my $readGroup = $self->_metaGenerate_getDataReadGroup( $rowHR->{'file_path'} );
+
+        my $fileNoExtension = ($CLASS->getFileBaseName( $rowHR->{'file_path'} ))[0];
 
         my $fileName = (File::Spec->splitpath( $rowHR->{'file_path'} ))[2];
         my $localFileLink =
@@ -1215,62 +1237,83 @@ sub _metaGenerate_getData {
             . $rowHR->{'sample_tcga_uuid'} . '.'
             . $fileName;
 
-        $data = {
-            'metadata_dir'         => $rowHR->{'metadata_dir'},
-            'cghub_analysis_id'    => $rowHR->{'cghub_analysis_id'},
-            'library_prep'         => 'Illumina TruSeq',
-            'program_version'      => $VERSION,
-            'sample_tcga_uuid'     => $rowHR->{'sample_tcga_uuid'},
-            'lane_accession'       => $rowHR->{'lane_accession'},
-            'file_md5sum'          => $rowHR->{'file_md5sum'},
-            'file_accession'       => $rowHR->{'file_accession'},
-            'upload_file_name'     => $localFileLink,
-            'uploadIdAlias'        => "upload $upload_id",
-            'experiment_accession' => $rowHR->{'experiment_accession'},
-            'sample_accession'     => $rowHR->{'sample_accession'},
-            'experiment_description' => $rowHR->{'experiment_description'},
-            'instrument_model'     => $rowHR->{'instrument_model'},
-            'preservation'         => 'FROZEN',
-            'read_ends'        => 
-                $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} ),
-            'base_coord'   => -1  +
-                $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} ),
-            'file_path_base'  => 
-                (Bio::SeqWare::Uploads::CgHub::Bam->getFileBaseName(
-                    $rowHR->{'file_path'} ))[0],
-            'analysis_date'   =>
-                Bio::SeqWare::Uploads::CgHub::Bam->reformatTimestamp(
-                    $rowHR->{'file_timestamp'} ),
+        # Load data for analysis.xml
+        my $analysisDataHR = {
+            'uploadIdAlias'      => $uploadIdAlias,
+            'analysisDate'       => $analysisDate,
+            'workflow_accession' => $rowHR->{'workflow_accession'},
+            'tcga_uuid'          => $rowHR->{'tcga_uuid'},
+            'lane_accession'     => $rowHR->{'lane_accession'},
+            'readGroup'          => $readGroup,
+            'fileNoExtension'    => $fileNoExtension,
+            'workflow_name'      => $rowHR->{'workflow_name'},
+            'workflow_version'   => $rowHR->{'workflow_version'},
+            'workflow_algorithm' => $rowHR->{'workflow_algorithm'},
+            'file_accession'     => $rowHR->{'file_accession'},
+            'file_md5sum'        => $rowHR->{'file_md5sum'},
+            'uncFileSampleName'  => $localFileLink,
         };
 
-        if ($rowHR->{'preservation'} && $rowHR->{'preservation'} eq 'FFPE') {
-            $data->{'preservation'} = 'FFPE';
+        # Prepare data for experiment.xml
+        my $libraryPrep = $rowHR->{'library_prep'};
+        if (! defined $libraryPrep || $libraryPrep !~ /TotalRNA/i) {
+            $libraryPrep = "Illumina TruSeq";
         }
 
-        if ($data->{'read_ends'} == 1) {
-            $data->{'library_layout'} = 'SINGLE';
+        my $readEnds = $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} );
+        if ($readEnds != 2) {
+            die "BadReadEnds: Only paired end (2 reads) allowed, not $readEnds.";
         }
-        elsif ($data->{'read_ends'} == 2) {
-            $data->{'library_layout'} = 'PAIRED';
+
+        my $baseCoord = -1  + $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
+
+        my $preservation = $rowHR->{'preservation'};
+        if (! defined $preservation || $preservation !~ /FFPE/i) {
+            $preservation = "FROZEN";
         }
         else {
-            $self->{'error'} = 'bad_read_ends';
-            croak("XML only defined for read_ends 1 or 2, not $data->{'read_ends'}\n");
+            $preservation = "FFPE";
         }
+
+        # Load data for experiment.xml
+        my $experimentDataHR = {
+            'experiment_accession'   => $rowHR->{'experiment_accession'},
+            'sample_accession'       => $rowHR->{'sample_accession'},
+            'experiment_description' => $rowHR->{'experiment_description'},
+            'tcga_uuid'              => $rowHR->{'tcga_uuid'},
+            'libraryPrep'            => $libraryPrep,
+            'LibraryLayout'          => "PAIRED",
+            'baseCoord'              => $baseCoord,
+            'instrument_model'       => $rowHR->{'instrument_model'},
+            'preservation'           => $preservation,
+        };
+
+        my $bad = $CLASS->checkCompatibleHash($runDataHR, $experimentDataHR);
+        if ($bad) {
+            die "BadDataException: run and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
+        }
+        $bad = $CLASS->checkCompatibleHash($runDataHR, $analysisDataHR);
+        if ($bad) {
+            die "BadDataException: run and analysis data different. Error was:\n\t" . Dumper($bad) . "\n";
+        }
+        $bad = $CLASS->checkCompatibleHash($analysisDataHR, $experimentDataHR);
+        if ($bad) {
+            die "BadDataException: analysis and analysis data different. Error was:\n\t" . Dumper($bad) . "\n";
+        }
+
+        my %data = (%$analysisDataHR, %$experimentDataHR, %$runDataHR);
+        $dataHR = \%data;
 
         if ($self->{'verbose'}) {
             my $message = "Template Data:\n";
-            for my $key (sort keys %$data) {
-                $message .= "\t\"$key\" = \"$data->{$key}\"\n";
+            for my $key (sort keys %$dataHR) {
+                $message .= "\t\"$key\" = \"$dataHR->{$key}\"\n";
             }
             $self->sayVerbose( $message );
         }
 
-        for my $key (sort keys %$data) {
-            if (! defined $data->{$key} || length $data->{$key} == 0) {
-                $self->{'error'} = "missing_template_data_$key";
-                croak("No value obtained for template data element \'$key\'\n");
-            }
+        for my $key (sort keys %$dataHR) {
+            $CLASS->ensureHashHasValue($dataHR, $key);
         }
 
         $self->sayVerbose("Created local link \"$localFileLink\"");
@@ -1280,7 +1323,7 @@ sub _metaGenerate_getData {
         $self->dbDie("MetaDataGenerateException: Failed collecting data for template use: $error");
     }
 
-    return $data;
+    return $dataHR;
 }
 
 =head2 _metaGenerate_getDataReadCount
@@ -1333,6 +1376,36 @@ sub _metaGenerate_getDataReadCount {
     return $readEnds;
 }
 
+sub _metaGenerate_getDataReadGroup {
+    my $self = shift;
+    my $bamFile = shift;
+
+    my $read_group;
+    my $SAMTOOLS_EXEC = '/datastore/tier1data/nextgenseq/seqware-analysis/software/samtools/samtools';
+    eval {
+        $CLASS->ensureIsFile( $bamFile );
+
+
+        my $command = "$SAMTOOLS_EXEC view -H $bamFile | grep \@RG | cut -f 2 | cut -d : -f 2";
+        $self->sayVerbose( "READ LENGTH COMMAND: \"$command\"" );
+        $read_group = qx/$command/;
+        chomp($read_group);
+
+        # If a newline is in the output, we may have multiple read groups
+        my $containsNewline = $read_group =~ m/\n/;
+        if (($containsNewline) || ($read_group eq "")) {
+          die "Invalid read group: $read_group\n";
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        die ( "ReadGroupException: Can't determine read group because:\n\t$error" );
+    }
+
+    return $read_group;
+
+}
+
 =head2 _metaGenerate_getDataReadLength
 
    $baseCountPerRead = _metaGenerate_getDataReadLength( $bam_file_path );
@@ -1352,12 +1425,7 @@ sub _metaGenerate_getDataReadLength {
     my $readLength = 0;
 
     eval {
-        if (! defined $bamFile) {
-             die "BadParameterException: Bam file name undefined.\n";
-        }
-        unless (-f $bamFile) {
-             die "BadParameterException: No such File: \"$bamFile\"\n";
-        }
+        $CLASS->ensureIsFile( $bamFile );
 
         my $command = "$SAMTOOLS_EXEC view $bamFile | head -1000 | cut -f 10";
         $self->sayVerbose( "READ LENGTH COMMAND: \"$command\"" );
