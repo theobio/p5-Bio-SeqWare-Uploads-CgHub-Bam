@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <EXPERIMENT_SET
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:noNamespaceSchemaLocation="http://www.ncbi.nlm.nih.gov/viewvc/v1/trunk/sra/doc/SRA_1-5/SRA.experiment.xsd?view=co">
-<EXPERIMENT center_name="UNC-LCCC" alias="UNCID:975937-2090625">
+<EXPERIMENT center_name="UNC-LCCC" alias="UNCID:975937-2449976">
     <STUDY_REF accession="SRP000677" refcenter="NHGRI" refname="phs000178"/>
     <DESIGN>
         <DESIGN_DESCRIPTION>TCGA RNA-Seq Paired-End Experiment</DESIGN_DESCRIPTION>
-        <SAMPLE_DESCRIPTOR refcenter="TCGA" refname="66770b06-2cd6-4773-b8e8-5b38faa4f5a4"/>
+        <SAMPLE_DESCRIPTOR refcenter="TCGA" refname="23b47813-7a77-44ca-b650-31a319c1f497"/>
         <LIBRARY_DESCRIPTOR>
-            <LIBRARY_NAME>Illumina TruSeq for 66770b06-2cd6-4773-b8e8-5b38faa4f5a4</LIBRARY_NAME>
+            <LIBRARY_NAME>Illumina TruSeq for 23b47813-7a77-44ca-b650-31a319c1f497</LIBRARY_NAME>
             <LIBRARY_STRATEGY>RNA-Seq</LIBRARY_STRATEGY>
             <LIBRARY_SOURCE>GENOMIC</LIBRARY_SOURCE>
             <LIBRARY_SELECTION>RANDOM</LIBRARY_SELECTION>
@@ -18,18 +18,18 @@
         </LIBRARY_DESCRIPTOR>
         <SPOT_DESCRIPTOR>
             <SPOT_DECODE_SPEC>
-				<READ_SPEC>
- 					<READ_INDEX>0</READ_INDEX>
-					<READ_CLASS>Application Read</READ_CLASS>
-					<READ_TYPE>Forward</READ_TYPE>
-					<BASE_COORD>1</BASE_COORD>
-				</READ_SPEC>
-				<READ_SPEC>
-					<READ_INDEX>1</READ_INDEX>
-					<READ_CLASS>Application Read</READ_CLASS>
-					<READ_TYPE>Reverse</READ_TYPE>
-					<BASE_COORD>16</BASE_COORD>
-				</READ_SPEC>
+                <READ_SPEC>
+                    <READ_INDEX>0</READ_INDEX>
+                    <READ_CLASS>Application Read</READ_CLASS>
+                    <READ_TYPE>Forward</READ_TYPE>
+                    <BASE_COORD>1</BASE_COORD>
+                </READ_SPEC>
+                <READ_SPEC>
+                    <READ_INDEX>1</READ_INDEX>
+                    <READ_CLASS>Application Read</READ_CLASS>
+                    <READ_TYPE>Reverse</READ_TYPE>
+                    <BASE_COORD>49</BASE_COORD>
+                </READ_SPEC>
             </SPOT_DECODE_SPEC>
         </SPOT_DESCRIPTOR>
     </DESIGN>
@@ -39,8 +39,8 @@
         </ILLUMINA>
     </PLATFORM>
     <PROCESSING>
-    	<PIPELINE>
-       	   <PIPE_SECTION section_name="BASE_CALLS">
+        <PIPELINE>
+           <PIPE_SECTION section_name="BASE_CALLS">
             <STEP_INDEX>N/A</STEP_INDEX>
             <PREV_STEP_INDEX>NIL</PREV_STEP_INDEX>
             <PROGRAM>OLB</PROGRAM>
@@ -66,7 +66,7 @@
     <EXPERIMENT_ATTRIBUTES>
         <EXPERIMENT_ATTRIBUTE>
             <TAG>SAMPLE_PRESERVATION</TAG>
-            <VALUE>FFPE</VALUE>
+            <VALUE>FROZEN</VALUE>
         </EXPERIMENT_ATTRIBUTE>
     </EXPERIMENT_ATTRIBUTES>
 </EXPERIMENT>
