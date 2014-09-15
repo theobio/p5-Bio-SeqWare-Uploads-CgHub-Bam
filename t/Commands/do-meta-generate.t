@@ -52,9 +52,9 @@ copy($GOOD_RUN_XML_FILE, $FAKE_BAM_FILE) or die "Can't copy file for testing";
 
 subtest( '_metaGenerate_getDataReadLength()' => \&test_metaGenerate_getDataReadLength );
 subtest( '_metaGenerate_getDataReadCount()' => \&test_metaGenerate_getDataReadCount );
-# subtest( '_metaGenerate_getData()' => \&test_metaGenerate_getData );
 subtest( '_metaGenerate_linkBam()' => \&test_metaGenerate_linkBam );
 subtest( '_metaGenerate_makeDataDir()' => \&test_metaGenerate_makeDataDir );
+# subtest( '_metaGenerate_getData()' => \&test_metaGenerate_getData );
 
 sub test_metaGenerate_makeDataDir {
      plan( tests => 5 );
@@ -93,6 +93,76 @@ sub test_metaGenerate_makeDataDir {
 
 }
 
+sub test_metaGenerate_linkBam {
+    plan( tests => 6 );
+
+    my $obj = makeBamForMetaGenerate();
+    {
+        my $dataHR = {
+            'file_path' => $FAKE_BAM_FILE, 'dataDir' => $TEMP_DIR,
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        my $filename = 'fake.bam';
+        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
+        my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
+        {
+            ok(! -l $wantLinkPath, "Link doesn't pre-exist");
+        }
+        {
+            my $message = 'Link file name is returned correctly';
+            my $want = $wantLinkName;
+            my $got = $obj->_metaGenerate_linkBam( $dataHR );
+            is($got, $want, $message);
+        }
+        {
+            ok(-l $wantLinkPath, "Link is created");
+            unlink( $wantLinkPath ) or die ("Deleting link $wantLinkPath failed. $!");
+        }
+    }
+    {
+        my $dataHR = {
+            'file_path' => $CLASS->getUuid(), 'dataDir' => $TEMP_DIR,
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        {
+            my $message = 'Error if file linked to does not exist';
+            my $error1RES = 'FileNotFoundException: Error looking up file ' . $dataHR->{'file_path'} . '\. Error was:';
+            my $errorRE = qr/^$error1RES\n\t/;
+            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
+        }
+    }
+    {
+        my $dataHR = {
+            'file_path' => $FAKE_BAM_FILE, 'dataDir' => $CLASS->getUuid(),
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        {
+            my $message = 'Error if dir link put in does not exist';
+            my $error1RES = 'DirNotFoundException: Error looking up directory ' . $dataHR->{'dataDir'} . '\. Error was:';
+            my $errorRE = qr/^$error1RES\n\t/;
+            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
+        }
+    }
+    {
+        my $dataHR = {
+            'file_path' => $FAKE_BAM_FILE, 'dataDir' => File::Temp->newdir(),
+            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+        };
+        my $filename = 'fake.bam';
+        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
+        my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
+        {
+            my $message = 'Error if creating link fails';
+            chmod( 0555, $dataHR->{'dataDir'} );
+            my $error1RES = 'CreateLinkException: Could not create symlink:';
+            my $error2RES = 'Link: "' . $wantLinkPath . '"';
+            my $error3RES = 'Pointing to: "' . $dataHR->{'file_path'} . '"\. Error was:';
+            my $errorRE = qr/^$error1RES\n\t$error2RES\n\t$error3RES/m;
+            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
+        }
+    }
+}
+
 sub test_metaGenerate_getDataReadLength {
     plan( tests => 6);
 
@@ -120,8 +190,8 @@ sub test_metaGenerate_getDataReadLength {
         {
             my $message = "Error if provided filename not real.";
             my $error1RES = "ReadLengthException: Can't determine bam max read length because:";
-            my $error2RES = "BadParameterException: No such File:";
-            my $matchRE = qr/^$error1RES.*\n\t$error2RES/;
+            my $error2RES = "FileNotFoundException: Error looking up file $badFileName\. Error was:";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES\n\t/;
             throws_ok( sub { $obj->_metaGenerate_getDataReadLength( $badFileName ); }, $matchRE, $message );
         }
     }
@@ -133,7 +203,7 @@ sub test_metaGenerate_getDataReadLength {
         {
             my $message = "Error if provided filename undefined";
             my $error1RES = "ReadLengthException: Can't determine bam max read length because:";
-            my $error2RES = "BadParameterException: Bam file name undefined\.";
+            my $error2RES = "ValueNotDefinedException: Expected a defined value\.";
             my $matchRE = qr/^$error1RES.*\n\t$error2RES/;
             throws_ok( sub { $obj->_metaGenerate_getDataReadLength( $badFileName ); }, $matchRE, $message );
         }
@@ -386,76 +456,6 @@ sub test_metaGenerate_getData {
         $mock_readpipe->{'mock'} = 0;
     }
 
-}
-
-sub test_metaGenerate_linkBam {
-    plan( tests => 6 );
-
-    my $obj = makeBamForMetaGenerate();
-    {
-        my $dataHR = {
-            'file_path' => $FAKE_BAM_FILE, 'dataDir' => $TEMP_DIR,
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
-        };
-        my $filename = 'fake.bam';
-        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
-        my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
-        {
-            ok(! -l $wantLinkPath, "Link doesn't pre-exist");
-        }
-        {
-            my $message = 'Link file name is returned correctly';
-            my $want = $wantLinkName;
-            my $got = $obj->_metaGenerate_linkBam( $dataHR );
-            is($got, $want, $message);
-        }
-        {
-            ok(-l $wantLinkPath, "Link is created");
-            unlink( $wantLinkPath ) or die ("Deleting link $wantLinkPath failed. $!");
-        }
-    }
-    {
-        my $dataHR = {
-            'file_path' => $CLASS->getUuid(), 'dataDir' => $TEMP_DIR,
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
-        };
-        {
-            my $message = 'Error if file linked to does not exist';
-            my $error1RES = 'FileNotFoundException: Error looking up file ' . $dataHR->{'file_path'} . '\. Error was:';
-            my $errorRE = qr/^$error1RES\n\t/;
-            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
-        }
-    }
-    {
-        my $dataHR = {
-            'file_path' => $FAKE_BAM_FILE, 'dataDir' => $CLASS->getUuid(),
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
-        };
-        {
-            my $message = 'Error if dir link put in does not exist';
-            my $error1RES = 'DirNotFoundException: Error looking up directory ' . $dataHR->{'dataDir'} . '\. Error was:';
-            my $errorRE = qr/^$error1RES\n\t/;
-            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
-        }
-    }
-    {
-        my $dataHR = {
-            'file_path' => $FAKE_BAM_FILE, 'dataDir' => File::Temp->newdir(),
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
-        };
-        my $filename = 'fake.bam';
-        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
-        my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
-        {
-            my $message = 'Error if creating link fails';
-            chmod( 0555, $dataHR->{'dataDir'} );
-            my $error1RES = 'CreateLinkException: Could not create symlink:';
-            my $error2RES = 'Link: "' . $wantLinkPath . '"';
-            my $error3RES = 'Pointing to: "' . $dataHR->{'file_path'} . '"\. Error was:';
-            my $errorRE = qr/^$error1RES\n\t$error2RES\n\t$error3RES/m;
-            throws_ok( sub { $obj->_metaGenerate_linkBam( $dataHR ); }, $errorRE, $message);
-        }
-    }
 }
 
 # Data providers

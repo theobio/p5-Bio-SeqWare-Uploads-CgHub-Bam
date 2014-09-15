@@ -20,6 +20,7 @@ use File::Path;    # Create file paths
 
 # Cpan modules
 use File::HomeDir qw(home);             # Finding the home directory is hard.
+use File::ShareDir qw(dist_dir);        # Access data files from install.
 use Data::GUID;                         # Unique uuids.
 
 # GitHub only modules
@@ -478,8 +479,20 @@ Returns the fully initialized application object ready for running.
 sub init {
     my $self = shift;
 
-    $self->{'id'} = $CLASS->getUuid();
-    $self->{'dbh'} = undef; 
+    $self->{'id'}        = $CLASS->getUuid();
+    $self->{'dbh'}       = undef;
+
+    # Template files are tightly coupled, so provided with distro. Might want
+    # to have multiple versions, so are in subdirectory SRA_1-5.
+    $self->{'xmlSchema'} = 'SRA_1-5',
+    $self->{'templateBaseDir'}  = dist_dir('Bio-SeqWare-Uploads-CgHub-Bam'),
+
+    # Might want to make these options and pass in by config file.
+    $self->{'cghubSubmitExec'}  = '/usr/bin/cgsubmit',
+    $self->{'cghubUploadExec'}  = '/usr/bin/gtupload',
+    $self->{'cghubSubmitUrl'}   = 'https://cghub.ucsc.edu/',
+    $self->{'chghubSubmitCert'} = '/datastore/alldata/tcga/CGHUB/Key.20140221/cghub.key',
+
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
@@ -1162,6 +1175,82 @@ sub _launch_prepareUploadInfo {
    return \%upload;
 }
 
+=head2 _makeFileFromTemplate
+
+  $obj->_makeFileFromTemplate( $dataHR, $outFile );
+  $obj->_makeFileFromTemplate( $dataHR, $outFile, $templateFile );
+
+Takes the $dataHR of template values and uses it to fill in the
+a template ($templateFile) and generate an output file ($outFile). Returns
+the absolute path to the created $outFile file, or dies with error.
+When $outFile and/or $templateFile are relative, default directories are
+used from the object. The $templateFile is optional, if not given, uses
+$outFile.template as the template name.
+
+USES
+
+    'templateBaseDir' = Absolute basedir to use if $templateFile is relative.
+    'xmlSchema'       = Schema version, used as subdir under templateBaseDir
+                        if $templateFile is relative.
+    '_fastqUploadDir' = Absolute basedir to use if $outFile is relative.
+
+=cut
+
+sub _metaGenerate_makeFileFromTemplate {
+
+    my $self   = shift;
+    my $dataHR = shift;
+    my $outFile = shift;
+    my $templateFile = shift;
+
+    $CLASS->ensureIsDefined($dataHR);
+
+    $CLASS->ensureIsDefined($outFile);
+    my $outAbsFilePath = $outFile;
+    if (! File::Spec->file_name_is_absolute( $outFile )) {
+        $outAbsFilePath = File::Spec->catfile( $self->{'_fastqUploadDir'}, $outFile );
+    }
+
+    unless (defined $templateFile) {
+        $templateFile = $outFile . ".template";
+        $self->sayVerbose( "Using default template file name: $templateFile\n" );
+    }
+    my $templateAbsFilePath = $templateFile;
+    if (! File::Spec->file_name_is_absolute( $templateFile )) {
+        $templateAbsFilePath = File::Spec->catfile(
+            $self->{'templateBaseDir' },
+            $self->{'xmlSchema' },
+            $templateFile
+        );
+    }
+    $CLASS->ensureIsFile($templateAbsFilePath);
+
+    $self->sayDebug( "TEMPLATE: $templateAbsFilePath\n"
+            ."OUTFILE: $outAbsFilePath\n"
+            ."DATA: \n",
+            $dataHR
+    );
+
+    # Stamp output file from merged dataHR and template file
+    eval {
+        my $templateManager = Template->new({ 'ABSOLUTE' => 1, });
+        my $ok = $templateManager->process( $templateAbsFilePath, $dataHR, $outAbsFilePath  );
+        if (! $ok) {
+            die( $templateManager->error() . "\n");
+        }
+        $CLASS->ensureIsFile(
+            $outAbsFilePath,
+            "Can't find the file I should have just created: $outAbsFilePath\n"
+        );
+    };
+    if ($@) {
+        my $error = $@;
+        die ( "FileFromTemplateException: Failed creating file \"$outAbsFilePath\" from template \"$templateAbsFilePath\". Error was:\n\t$error");
+    }
+
+    return $outAbsFilePath;
+}
+
 =head2 _metaGenerate_getData
 
     $self->_metaGenerate_getData()
@@ -1211,9 +1300,16 @@ sub _metaGenerate_getData {
         my $selectionSTH = $dbh->prepare( $selectAllSQL );
         $selectionSTH->execute( $upload_id );
         my $rowHR = $selectionSTH->fetchrow_hashref();
+        my $badHR = $selectionSTH->fetchrow_hashref();
+        if ($badHR) {
+            say("Dulicate data record 1: ", $rowHR);
+            say("Dulicate data record 2: ", $badHR);
+            die "DbDuplicateRecordException: Data record retrieved should be unique.\n";
+        }
         $selectionSTH->finish();
 
-        # Load data for run.xml
+        # run.xml
+
         my $runDataHR = {
             'lane_accession'       => $rowHR->{'lane_accession'},
             'experiment_accession' => $rowHR->{'experiment_accession'},
@@ -1221,23 +1317,29 @@ sub _metaGenerate_getData {
             'tcga_uuid'            => $rowHR->{'tcga_uuid'},
         };
 
-        # Prepare data for analysis.xml
-        my $uploadIdAlias = "upload_" . $upload_id;
+        # analysis.xml
 
-        my $analysisDate = $CLASS->reformatTimestamp( $rowHR->{'file_timestamp'} );
+        my $uploadIdAlias =
+            "upload_" . $upload_id;
 
-        my $readGroup = $self->_metaGenerate_getDataReadGroup( $rowHR->{'file_path'} );
+        my $analysisDate =
+            $CLASS->reformatTimestamp( $rowHR->{'file_timestamp'} );
 
-        my $fileNoExtension = ($CLASS->getFileBaseName( $rowHR->{'file_path'} ))[0];
+        my $readGroup =
+            $self->_metaGenerate_getDataReadGroup( $rowHR->{'file_path'} );
 
-        my $fileName = (File::Spec->splitpath( $rowHR->{'file_path'} ))[2];
+        my $fileNoExtension =
+            ($CLASS->getFileBaseName( $rowHR->{'file_path'} ))[0];
+
+        my $fileName =
+            (File::Spec->splitpath( $rowHR->{'file_path'} ))[2];
+
         my $localFileLink =
             "UNCID_"
             . $rowHR->{'file_accession'} . '.'
             . $rowHR->{'sample_tcga_uuid'} . '.'
             . $fileName;
 
-        # Load data for analysis.xml
         my $analysisDataHR = {
             'uploadIdAlias'      => $uploadIdAlias,
             'analysisDate'       => $analysisDate,
@@ -1254,20 +1356,25 @@ sub _metaGenerate_getData {
             'uncFileSampleName'  => $localFileLink,
         };
 
-        # Prepare data for experiment.xml
-        my $libraryPrep = $rowHR->{'library_prep'};
+        # experiment.xml
+
+        my $libraryPrep =
+            $rowHR->{'library_prep'};
         if (! defined $libraryPrep || $libraryPrep !~ /TotalRNA/i) {
             $libraryPrep = "Illumina TruSeq";
         }
 
-        my $readEnds = $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} );
+        my $readEnds =
+            $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} );
         if ($readEnds != 2) {
             die "BadReadEnds: Only paired end (2 reads) allowed, not $readEnds.";
         }
 
-        my $baseCoord = -1  + $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
+        my $baseCoord =
+            -1  + $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
 
-        my $preservation = $rowHR->{'preservation'};
+        my $preservation =
+            $rowHR->{'preservation'};
         if (! defined $preservation || $preservation !~ /FFPE/i) {
             $preservation = "FROZEN";
         }
@@ -1275,7 +1382,6 @@ sub _metaGenerate_getData {
             $preservation = "FFPE";
         }
 
-        # Load data for experiment.xml
         my $experimentDataHR = {
             'experiment_accession'   => $rowHR->{'experiment_accession'},
             'sample_accession'       => $rowHR->{'sample_accession'},
@@ -1288,6 +1394,8 @@ sub _metaGenerate_getData {
             'preservation'           => $preservation,
         };
 
+        # Merge data
+
         my $bad = $CLASS->checkCompatibleHash($runDataHR, $experimentDataHR);
         if ($bad) {
             die "BadDataException: run and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
@@ -1298,25 +1406,24 @@ sub _metaGenerate_getData {
         }
         $bad = $CLASS->checkCompatibleHash($analysisDataHR, $experimentDataHR);
         if ($bad) {
-            die "BadDataException: analysis and analysis data different. Error was:\n\t" . Dumper($bad) . "\n";
+            die "BadDataException: analysis and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
 
-        my %data = (%$analysisDataHR, %$experimentDataHR, %$runDataHR);
-        $dataHR = \%data;
+        $dataHR = \(%$analysisDataHR, %$experimentDataHR, %$runDataHR);
 
-        if ($self->{'verbose'}) {
-            my $message = "Template Data:\n";
-            for my $key (sort keys %$dataHR) {
-                $message .= "\t\"$key\" = \"$dataHR->{$key}\"\n";
-            }
-            $self->sayVerbose( $message );
+        $bad = $CLASS->checkCompatibleHash($dataHR, $uploadHR);
+        if ($bad) {
+            die "BadDataException: template data and upload data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
+
+        $dataHR = \(%$dataHR, %$uploadHR);
+
+        # Validate
+        $self->sayDebug( "Template data is: ", $dataHR );
 
         for my $key (sort keys %$dataHR) {
             $CLASS->ensureHashHasValue($dataHR, $key);
         }
-
-        $self->sayVerbose("Created local link \"$localFileLink\"");
     };
     if ($@) {
         my $error = $@;
@@ -1375,6 +1482,14 @@ sub _metaGenerate_getDataReadCount {
 
     return $readEnds;
 }
+
+=head2 _metaGenerate_getDataReadGroup
+
+    my $readGroup = $self->_metaGenerate_getDataReadGroup( $bamFile );
+
+Gets the read group from the bam file using samtools and some unix tools.
+
+=cut
 
 sub _metaGenerate_getDataReadGroup {
     my $self = shift;
