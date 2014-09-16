@@ -5,9 +5,10 @@ use warnings FATAL => 'all';
 
 use File::Spec;
 use File::Copy;
+use Data::Dumper;
 
 use File::Temp;                      # Simple files for testing
-use Test::More 'tests' => 5;     # Main test module; run this many tests
+use Test::More 'tests' => 6;     # Main test module; run this many tests
 use Test::Exception;
 use Test::File::Contents;
 
@@ -62,6 +63,23 @@ TAGGC
 CAGCGGCAT
 ";
 
+my $SAMTOOLD_VIEW_HEADERS = 
+"\@HD\tVN:1.0\tSO:unsorted
+\@SQ\tSN:chr1\tLN:249250621
+\@SQ\tSN:chr10\tLN:135534747
+\@SQ\tSN:chr3\tLN:198022430
+\@SQ\tSN:chr4\tLN:191154276
+\@SQ\tSN:chr5\tLN:180915260
+\@SQ\tSN:chr6\tLN:171115067
+\@SQ\tSN:chr7\tLN:159138663
+\@SQ\tSN:chr8\tLN:146364022
+\@SQ\tSN:chr9\tLN:141213431
+\@SQ\tSN:chrM_rCRS\tLN:16569
+\@SQ\tSN:chrX\tLN:155270560
+\@SQ\tSN:chrY\tLN:59373566
+\@RG\tID:140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC\tPL:illumina\tPU:barcode\tLB:TruSeq\tSM:140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC
+";
+
 my $TEMP_DIR = File::Temp->newdir();  # Auto-delete self and contents when out of scope
 my $DATA_DIR = File::Spec->catdir( "t", "Data", "Xml" );
 my $GOOD_RUN_XML_FILE = File::Spec->catfile( $DATA_DIR, 'run.xml' );
@@ -70,8 +88,62 @@ my $GOOD_ANALYSIS_XML_FILE = File::Spec->catfile( $DATA_DIR, 'analysis.xml' );
 my $FAKE_BAM_FILE = File::Spec->catfile( $TEMP_DIR, 'fake.bam' );
 copy($GOOD_RUN_XML_FILE, $FAKE_BAM_FILE) or die "Can't copy file for testing";
 
+# Data for one sample
+
+my $UPLOAD_HR = {
+    'upload_id'         => 23985,
+    'sample_id'         => 18254,
+    'target'            => 'CGHUB',
+    'status'            => 'CGHUB_Complete',
+    'cghub_analysis_id' => '41a12166-ec7e-447b-94b2-9f3dd96401ca',
+    'tstmp'             => '2014-08-13 10:06:46.949567',
+    'metadata_dir'      => 'datastore/tcga/cghub/v2_uploads',
+    'external_status'   => 'live',
+};
+
+my $LINK_NAME = 'UNCID_2462755.23b47813-7a77-44ca-b650-31a319c1f497.sorted_genome_alignments.bam';
+
+my $RUN_HR = {
+    'lane_accession'       => 2449977,
+    'experiment_accession' => 975937,
+    'sample_accession'     => 2449976,
+};
+
+my $ANALYSIS_HR = {
+    'uploadIdAlias'      => 2574890,
+    'analysisDate'       => '2014-05-19T15:47:52.663',
+    'workflow_accession' => 1015700,
+    'tcga_uuid'          => '23b47813-7a77-44ca-b650-31a319c1f497',
+    'lane_accession'     => 2449977,
+    'readGroup'          => '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC',
+    'fileNoExtension'    => 'sorted_genome_alignments',
+    'workflow_name'      => 'MapspliceRSEM',
+    'workflow_version'   => '0.7.4',
+    'workflow_algorithm' => 'samtools-sort-genome',
+    'file_accession'     => 2462755,
+    'file_md5sum'        => '04f5a22164bb399f61a2caee8ecb048b',
+    'uncFileSampleName'  => $LINK_NAME,
+};
+
+my $EXPERIMENT_HR = {
+    'experiment_accession'   => 975937,
+    'sample_accession'       => 2449976,
+    'experiment_description' => 'TCGA RNA-Seq Paired-End Experiment',
+    'tcga_uuid'              => '23b47813-7a77-44ca-b650-31a319c1f497',
+    'libraryPrep'            => 'Illumina TruSeq',
+    'LibraryLayout'          => "PAIRED",
+    'readEnds'               => 2,
+    'baseCoord'              => 49,
+    'instrument_model'       => 'Illumina HiSeq 2000',
+    'preservation'           => 'FROZEN',
+};
+
+my %DATA = (%$UPLOAD_HR, %$RUN_HR, %$ANALYSIS_HR, %$EXPERIMENT_HR);
+my $DATA_HR = \%DATA;
+
 subtest( '_metaGenerate_getDataReadLength()' => \&test_getDataReadLength );
 subtest( '_metaGenerate_getDataReadCount()' => \&test_getDataReadCount );
+subtest( '_metaGenerate_getDataReadGroup()' => \&test_getDataReadGroup );
 subtest( '_metaGenerate_linkBam()' => \&test_linkBam );
 subtest( '_metaGenerate_makeDataDir()' => \&test_makeDataDir );
 # subtest( '_metaGenerate_getData()' => \&test_getData );
@@ -384,94 +456,184 @@ sub test_getDataReadCount {
    }
 }
 
+sub test_getDataReadGroup {
+    plan( tests => 7);
+
+    # Good test
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $anyRealFileName = $GOOD_RUN_XML_FILE;
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'ret'} = "$SAMTOOLD_VIEW_HEADERS";
+
+        {
+            my $message = "Returns correct read group";
+
+            # Read group expected given $SAMTOOLD_VIEW_HEADERS
+            my $want = "140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC";
+            my $got = $obj->_metaGenerate_getDataReadGroup( $anyRealFileName );
+            is( $got, $want, $message);
+        }
+        $mock_readpipe->{'ret'} = undef;
+        $mock_readpipe->{'mock'} = 1;
+    }
+
+    # Bad - No file path found
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $badFileName = $obj->getUuid() . ".bam";
+        {
+            my $message = "Error if provided filename not real.";
+            my $error1RES = "ReadGroupException: Can't determine read group because:";
+            my $error2RES = "FileNotFoundException: Error looking up file $badFileName\. Error was:";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES\n\t/;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadGroup( $badFileName ); }, $matchRE, $message );
+        }
+    }
+
+    # Bad - Undefined file path
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $badFileName = undef;
+        {
+            my $message = "Error if provided filename undefined";
+            my $error1RES = "ReadGroupException: Can't determine read group because:";
+            my $error2RES = "ValueNotDefinedException: Expected a defined value\.";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES/;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadGroup( $badFileName ); }, $matchRE, $message );
+        }
+    }
+
+    # Bad - Samtools failed with error exit.
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $anyRealFileName = $GOOD_RUN_XML_FILE;
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'exit'} = 27;
+        {
+            my $message = "Error if Samtools failes with error exit";
+            my $error1RES = "ReadGroupException: Can't determine read group because:";
+            my $error2RES = "SamtoolsFailedException: Error getting read group\. Exit error code: 27\. Failure message was:";
+            my $error3RES = "Original command was:";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES\n.*\n\t$error3RES/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadGroup( $anyRealFileName ); }, $matchRE, $message );
+        }
+        $mock_readpipe->{'mock'} = 0;
+        $mock_readpipe->{'exit'} = 0;
+    }
+
+    # Bad - Samtools produced no output.
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $anyRealFileName = $GOOD_RUN_XML_FILE;
+        $mock_readpipe->{'mock'} = 1;
+        {
+            my $message = "Error if Samtools succceds but returns nothing";
+            my $error1RES = "ReadGroupException: Can't determine read group because:";
+            my $error2RES = "SamtoolsExecNoOutputException: Neither error nor result generated\. Strange\.";
+            my $error3RES = "Original command was:";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES\n.*\n\t$error3RES/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadGroup( $anyRealFileName ); }, $matchRE, $message );
+        }
+        $mock_readpipe->{'mock'} = 0;
+        $mock_readpipe->{'exit'} = 0;
+    }
+
+    # Bad - Too many read groups found
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $anyRealFileName = $GOOD_RUN_XML_FILE;
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'ret'} = $SAMTOOLD_VIEW_HEADERS . $SAMTOOLD_VIEW_HEADERS;
+
+        {
+            my $message = "Error if get mre than one read group line.";
+            my $error1RES = "ReadGroupException: Can't determine read group because:";
+            my $error2RES = "ReadGroupNumberException: One and only one readgroup allowed. Found 2 lines:";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadGroup( $anyRealFileName ); }, $matchRE, $message );
+        }
+        $mock_readpipe->{'ret'} = undef;
+        $mock_readpipe->{'mock'} = 1;
+    }
+    # Bad - No read groups found
+    {
+        my $obj = makeBamForMetaGenerate();
+        my $anyRealFileName = $GOOD_RUN_XML_FILE;
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'ret'} = "This is not the expected output.";
+
+        {
+            my $message = "Error if get no read group line.";
+            my $error1RES = "ReadGroupException: Can't determine read group because:";
+            my $error2RES = "ReadGroupNumberException: One and only one readgroup allowed. Found 0 lines:";
+            my $matchRE = qr/^$error1RES.*\n\t$error2RES/m;
+            throws_ok( sub { $obj->_metaGenerate_getDataReadGroup( $anyRealFileName ); }, $matchRE, $message );
+        }
+        $mock_readpipe->{'ret'} = undef;
+        $mock_readpipe->{'mock'} = 1;
+    }
+
+
+}
+
 sub test_getData {
     plan( tests => 1 );
 
-    # Chosen to match analysis.xml data file
-    my $upload_id       = 7851;
-    my $fileTimestamp  = "2013-08-14 12:20:42.703867";
-    my $sampleTcgaUuid = "66770b06-2cd6-4773-b8e8-5b38faa4f5a4";
-    my $laneAccession  = 2090626;
-    my $fileAccession  = 2149605;
-    my $fileMd5sum     = "4181ac122b0a09f28cde79a9c3d5af39";
-    my $filePath       = "$FAKE_BAM_FILE";   # Dummy file name, must actually exist, though.
-    my $cghub_analysis_id     = "notReallyTheFastqUploadUuid";
-
-    my $localFileLink  = "UNCID_2149605.66770b06-2cd6-4773-b8e8-5b38faa4f5a4.130702_UNC9-SN296_0379_AC25KWACXX_6_ACTTGA.fastq.tar.gz";
-    my $fileBase       = "130702_UNC9-SN296_0379_AC25KWACXX_6_ACTTGA";
-    my $uploadIdAlias  = "upload $upload_id";
-    my $xmlTimestamp  = "2013-08-14T12:20:42.703867";
-
-    # Additional for run.xml data file
-    my $experimentAccession = 975937;
-    my $sampleAccession    = 2090625;
-    my $experimentId = -5;
-    my $sampleId = -19;
-
-    # Additional for experiment.xml
-    my $instrumentModel = 'Illumina HiSeq 2000';
-    my $experimentDescription = 'TCGA RNA-Seq Paired-End Experiment';
-    my $readEnds       = 2;
-    my $baseCoord      = 16;
-    my $preservation   = '';
-
-    my $expectData = {
-        'program_version'    => $Bio::SeqWare::Uploads::CgHub::Fastq::VERSION,
-        'sample_tcga_uuid'   => $sampleTcgaUuid,
-        'lane_accession'     => $laneAccession,
-        'file_md5sum'        => $fileMd5sum,
-        'file_accession'     => $fileAccession,
-        'upload_file_name'   => $localFileLink,
-        'uploadIdAlias'      => $uploadIdAlias,
-        'file_path_base'     => $fileBase,
-        'analysis_date'      => $xmlTimestamp,
-        'experiment_accession' => $experimentAccession,
-        'sample_accession'   => $sampleAccession,
-        'experiment_description' => $experimentDescription,
-        'instrument_model'   => $instrumentModel,
-        'read_ends'          => $readEnds,
-        'library_layout'     => 'PAIRED',
-        'base_coord'         => $baseCoord,
-        'library_prep'       => 'Illumina TruSeq',
-        'preservation'       => 'FROZEN',
-    };
-
     my @dbSession = ({
         'statement'    => qr/SELECT.*/msi,
-        'bound_params' => [ $upload_id ],
-        'results'  => [
-            [
-                'file_timestamp',       'sample_tcga_uuid',  'lane_accession',
-                'file_accession',       'file_md5sum',       'file_path',
-                'upload_basedir', 'cghub_analysis_id', 'experiment_accession',
-                'sample_accession',     'experiment_description', 'experiment_id',
-                'instrument_model',     'sample_id', 'preservation',
-            ], [
-                $fileTimestamp,   $sampleTcgaUuid,     $laneAccession,
-                $fileAccession,   $fileMd5sum,         $filePath,
-                "$TEMP_DIR",      $cghub_analysis_id,         $experimentAccession,
-                $sampleAccession, $experimentDescription, $experimentId,
-                $instrumentModel, $sampleId, $preservation,
-            ]
-        ]
-    },
-    {
-            'statement'    => qr/SELECT count\(\*\) as read_ends.*/msi,
-            'bound_params' => [ $experimentId ],
-            'results'  => [ ['read_ends'], [$readEnds], ]
+        'bound_params' => [ $DATA_HR->{'upload_id'} ],
+        'results'  => [[
+            qw(
+                file_timestamp
+                workflow_accession
+                file_accession
+                file_md5sum
+                file_path
+                workflow_name
+                workflow_version
+                workflow_algorithm
+                instrument_model
+                lane_accession
+                experiment_accession
+                library_prep
+                experiment_description
+                experiment_id
+                sample_accession
+                tcga_uuid
+                preservation
+            )
+        ], [
+            '2014-05-19 15:47:52.663',
+            1015700,
+            2462755,
+            '04f5a22164bb399f61a2caee8ecb048b',
+            '/datastore/nextgenout4/seqware-analysis/illumina/140502_UNC12-SN629_0366_AC3UT1ACXX/seqware-0.7.0_Mapsplice-0.7.4/140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC/sorted_genome_alignments.bam',
+            'MapspliceRSEM',
+            '0.7.4',
+            'samtools-sort-genome',
+            'Illumina HiSeq 2000',
+            2449977,
+            975937,
+            'TCGA RNA-Seq Multiplexed Paired-End Experiment on HiSeq 2000',
+            'TCGA RNA-Seq Paired-End Experiment',
+            72,
+            2449976,
+            '23b47813-7a77-44ca-b650-31a319c1f497',
+            undef,
+        ]]
     });
 
-    my $uploadHR = {'upload_id' => $upload_id};
     {
-
         my $obj = makeBamForMetaGenerate();
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'session'} = [
             { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
         ];
-        my $got = $obj->_metaGenerate_getData( $uploadHR );
-        my $want = $expectData;
+        my $got = $obj->_metaGenerate_getData( $UPLOAD_HR );
+        my $want = $DATA_HR;
         {
             is_deeply($got, $want, "Return value correct");
         }
@@ -483,55 +645,6 @@ sub test_getData {
 
 sub test_makeFileFromTemplate {
     plan( tests => 15);
-
-    my $uploadHR = {
-        'upload_id'         => 23985,
-        'sample_id'         => 18254,
-        'target'            => 'CGHUB',
-        'status'            => 'CGHUB_Complete',
-        'cghub_analysis_id' => '41a12166-ec7e-447b-94b2-9f3dd96401ca',
-        'tstmp'             => '2014-08-13 10:06:46.949567',
-        'metadata_dir'      => 'datastore/tcga/cghub/v2_uploads',
-        'external_status'   => 'live',
-    };
-
-    # Data (as would be needed for the target xml files.)
-    my $linkName = 'UNCID_2462755.23b47813-7a77-44ca-b650-31a319c1f497.sorted_genome_alignments.bam';
-
-    my $runDataHR = {
-        'lane_accession'       => 2449977,
-        'experiment_accession' => 975937,
-        'sample_accession'     => 2449976,
-    };
-
-    my $analysisDataHR = {
-        'uploadIdAlias'      => 2574890,
-        'analysisDate'       => '2014-05-19T15:47:52.663',
-        'workflow_accession' => 1015700,
-        'tcga_uuid'          => '23b47813-7a77-44ca-b650-31a319c1f497',
-        'lane_accession'     => 2449977,
-        'readGroup'          => '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC',
-        'fileNoExtension'    => 'sorted_genome_alignments',
-        'workflow_name'      => 'MapspliceRSEM',
-        'workflow_version'   => '0.7.4',
-        'workflow_algorithm' => 'samtools-sort-genome',
-        'file_accession'     => 2462755,
-        'file_md5sum'        => '04f5a22164bb399f61a2caee8ecb048b',
-        'uncFileSampleName'  => 'UNCID_2462755.23b47813-7a77-44ca-b650-31a319c1f497.sorted_genome_alignments.bam',
-    };
-
-        my $experimentDataHR = {
-            'experiment_accession'   => 975937,
-            'sample_accession'       => 2449976,
-            'experiment_description' => 'TCGA RNA-Seq Paired-End Experiment',
-            'tcga_uuid'              => '23b47813-7a77-44ca-b650-31a319c1f497',
-            'libraryPrep'            => 'Illumina TruSeq',
-            'LibraryLayout'          => "PAIRED",
-            'readEnds'               => 2,
-            'baseCoord'              => 49,
-            'instrument_model'       => 'Illumina HiSeq 2000',
-            'preservation'           => 'FROZEN',
-        };
 
     my $obj = makeBamForMetaGenerate();
     # run.xml
@@ -549,7 +662,7 @@ sub test_makeFileFromTemplate {
 
         # Absolute paths
         {
-            my $runXml = $obj->_metaGenerate_makeFileFromTemplate( $runDataHR, $outFileName, $templateFileName );
+            my $runXml = $obj->_metaGenerate_makeFileFromTemplate( $RUN_HR, $outFileName, $templateFileName );
             {
                 is ( $runXml, $outFileName, "Appeared to create run.xml file");
                 ok( (-f $runXml),   "Can find run.xml file");
@@ -573,7 +686,7 @@ sub test_makeFileFromTemplate {
 
         # Absolute paths
         {
-            my $analysisXml = $obj->_metaGenerate_makeFileFromTemplate( $analysisDataHR, $outFileName, $templateFileName );
+            my $analysisXml = $obj->_metaGenerate_makeFileFromTemplate( $ANALYSIS_HR, $outFileName, $templateFileName );
             {
                 is ( $analysisXml, $outFileName, "Appeared to create analysis.xml file");
                 ok( (-f $analysisXml),   "Can find analysis.xml file");
@@ -597,7 +710,7 @@ sub test_makeFileFromTemplate {
 
         # Absolute paths
         {
-            my $experimentXml = $obj->_metaGenerate_makeFileFromTemplate( $experimentDataHR, $outFileName, $templateFileName );
+            my $experimentXml = $obj->_metaGenerate_makeFileFromTemplate( $EXPERIMENT_HR, $outFileName, $templateFileName );
             {
                 is ( $experimentXml, $outFileName, "Appeared to create experiment.xml file");
                 ok( (-f $experimentXml),   "Can find experiment.xml file");
@@ -607,6 +720,7 @@ sub test_makeFileFromTemplate {
     }
 
 }
+
 # Data providers
 
 sub makeBamForMetaGenerate {

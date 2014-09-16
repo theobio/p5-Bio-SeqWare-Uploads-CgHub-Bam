@@ -1266,9 +1266,10 @@ sub _metaGenerate_makeFileFromTemplate {
 sub _metaGenerate_getData {
     my $self = shift;
     my $uploadHR = shift;
+    $CLASS->ensureHashHasValue($uploadHR, 'upload_id');
+    my $upload_id = $uploadHR->{'upload_id'};
 
     my $dbh = $self->getDbh();
-    my $upload_id = $uploadHR->{'upload_id'};
 
     my $selectAllSQL =
        "SELECT vf.tstmp             as file_timestamp,
@@ -1287,10 +1288,7 @@ sub _metaGenerate_getData {
                e.experiment_id,
                s.sw_accession       as sample_accession,
                s.tcga_uuid,
-               s.preservation,
-               u.metadata_dir,
-               u.cghub_analysis_id,
-               u.sample_id
+               s.preservation
         FROM upload u, upload_file uf, vw_files vf, lane l, experiment e, sample s, platform p
         WHERE u.upload_id = ?
           AND u.upload_id = uf.upload_id
@@ -1415,14 +1413,16 @@ sub _metaGenerate_getData {
             die "BadDataException: analysis and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
 
-        $dataHR = \(%$analysisDataHR, %$experimentDataHR, %$runDataHR);
+        my %data = (%$analysisDataHR, %$experimentDataHR, %$runDataHR);
+        $dataHR = \%data;
 
         $bad = $CLASS->checkCompatibleHash($dataHR, $uploadHR);
         if ($bad) {
             die "BadDataException: template data and upload data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
 
-        $dataHR = \(%$dataHR, %$uploadHR);
+        %data = (%$dataHR, %$uploadHR);
+        $dataHR = \%data;
 
         # Validate
         $self->sayDebug( "Template data is: ", $dataHR );
@@ -1507,22 +1507,32 @@ sub _metaGenerate_getDataReadGroup {
         $CLASS->ensureIsFile( $bamFile );
 
 
-        my $command = "$SAMTOOLS_EXEC view -H $bamFile | grep \@RG | cut -f 2 | cut -d : -f 2";
+        my $command = "$SAMTOOLS_EXEC view -H $bamFile";
         $self->sayVerbose( "READ LENGTH COMMAND: \"$command\"" );
-        $read_group = qx/$command/;
-        chomp($read_group);
-
-        # If a newline is in the output, we may have multiple read groups
-        my $containsNewline = $read_group =~ m/\n/;
-        if (($containsNewline) || ($read_group eq "")) {
-          die "Invalid read group: $read_group\n";
+        my $bamHeaderString = qx/$command/;
+        if ($?) {
+            die ("SamtoolsFailedException: Error getting read group. Exit error code: $?. Failure message was:\n$!"
+                . "\n\tOriginal command was:\n$command\n" );
         }
+        if (! $bamHeaderString) {
+            $self->{'error'} = "";
+            die( "SamtoolsExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        my @bamHeaders = split( "\n", $bamHeaderString );
+        my @readGroupLines = grep( /^\@RG/, @bamHeaders );
+        my  $readGroupCount= scalar @readGroupLines;
+        if ($readGroupCount != 1) {
+            die "ReadGroupNumberException: One and only one readgroup allowed. Found $readGroupCount lines:n\t" . Dumper(\@readGroupLines);
+        }
+        $readGroupLines[0] =~ /\tID:([^\t]+).*$/;
+        $read_group = $CLASS->ensureIsDefined($1);
+ 
     };
     if ($@) {
         my $error = $@;
         die ( "ReadGroupException: Can't determine read group because:\n\t$error" );
     }
-
     return $read_group;
 
 }
