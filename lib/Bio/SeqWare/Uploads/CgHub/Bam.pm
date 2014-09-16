@@ -1340,7 +1340,7 @@ sub _metaGenerate_getData {
         my $localFileLink =
             "UNCID_"
             . $rowHR->{'file_accession'} . '.'
-            . $rowHR->{'sample_tcga_uuid'} . '.'
+            . $rowHR->{'tcga_uuid'} . '.'
             . $fileName;
 
         my $analysisDataHR = {
@@ -1374,7 +1374,7 @@ sub _metaGenerate_getData {
         }
 
         my $baseCoord =
-            -1  + $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
+            $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
 
         my $preservation =
             $rowHR->{'preservation'};
@@ -1521,7 +1521,7 @@ sub _metaGenerate_getDataReadGroup {
         }
         my @bamHeaders = split( "\n", $bamHeaderString );
         my @readGroupLines = grep( /^\@RG/, @bamHeaders );
-        my  $readGroupCount= scalar @readGroupLines;
+        my  $readGroupCount = scalar @readGroupLines;
         if ($readGroupCount != 1) {
             die "ReadGroupNumberException: One and only one readgroup allowed. Found $readGroupCount lines:n\t" . Dumper(\@readGroupLines);
         }

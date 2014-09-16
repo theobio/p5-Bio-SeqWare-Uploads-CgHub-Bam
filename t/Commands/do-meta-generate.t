@@ -8,9 +8,10 @@ use File::Copy;
 use Data::Dumper;
 
 use File::Temp;                      # Simple files for testing
-use Test::More 'tests' => 6;     # Main test module; run this many tests
+use Test::More 'tests' => 7;     # Main test module; run this many tests
 use Test::Exception;
 use Test::File::Contents;
+use Test::MockModule;
 
 BEGIN {
     *CORE::GLOBAL::readpipe = \&mock_readpipe; # Must be before use
@@ -110,7 +111,7 @@ my $RUN_HR = {
 };
 
 my $ANALYSIS_HR = {
-    'uploadIdAlias'      => 2574890,
+    'uploadIdAlias'      => 'upload_23985',
     'analysisDate'       => '2014-05-19T15:47:52.663',
     'workflow_accession' => 1015700,
     'tcga_uuid'          => '23b47813-7a77-44ca-b650-31a319c1f497',
@@ -141,13 +142,13 @@ my $EXPERIMENT_HR = {
 my %DATA = (%$UPLOAD_HR, %$RUN_HR, %$ANALYSIS_HR, %$EXPERIMENT_HR);
 my $DATA_HR = \%DATA;
 
+subtest( '_metaGenerate_linkBam()' => \&test_linkBam );
+subtest( '_metaGenerate_makeDataDir()' => \&test_makeDataDir );
 subtest( '_metaGenerate_getDataReadLength()' => \&test_getDataReadLength );
 subtest( '_metaGenerate_getDataReadCount()' => \&test_getDataReadCount );
 subtest( '_metaGenerate_getDataReadGroup()' => \&test_getDataReadGroup );
-subtest( '_metaGenerate_linkBam()' => \&test_linkBam );
-subtest( '_metaGenerate_makeDataDir()' => \&test_makeDataDir );
-# subtest( '_metaGenerate_getData()' => \&test_getData );
 subtest( '_metaGenerate_makeFileFromTemplate()' => \&test_makeFileFromTemplate );
+subtest( '_metaGenerate_getData()' => \&test_getData );
 
 sub test_makeDataDir {
      plan( tests => 5 );
@@ -625,19 +626,25 @@ sub test_getData {
     });
 
     {
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('_metaGenerate_getDataReadGroup', sub { return '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC'; } );
+        $module->mock('_metaGenerate_getDataReadLength', sub { return '49' } );
+        $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
+
         my $obj = makeBamForMetaGenerate();
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'session'} = [
             { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
-            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+            { 'ret' => "$SAMTOOLD_VIEW_HEADERS", 'exit' => 0 },
         ];
         my $got = $obj->_metaGenerate_getData( $UPLOAD_HR );
         my $want = $DATA_HR;
         {
             is_deeply($got, $want, "Return value correct");
         }
-        $mock_readpipe->{'ret'} = undef;
+        $mock_readpipe->{'session'} = undef;
+        $mock_readpipe->{'_idx'} = undef;
         $mock_readpipe->{'mock'} = 0;
     }
 

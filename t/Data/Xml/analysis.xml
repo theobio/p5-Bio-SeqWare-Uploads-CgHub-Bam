@@ -2,7 +2,7 @@
 <ANALYSIS_SET
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:noNamespaceSchemaLocation="http://www.ncbi.nlm.nih.gov/viewvc/v1/trunk/sra/doc/SRA_1-5/SRA.analysis.xsd?view=co">
-    <ANALYSIS center_name="UNC-LCCC" alias="2574890" analysis_date="2014-05-19T15:47:52.663" analysis_center="UNC-LCCC">
+    <ANALYSIS center_name="UNC-LCCC" alias="upload_23985" analysis_date="2014-05-19T15:47:52.663" analysis_center="UNC-LCCC">
         <TITLE>Mapsplice Alignment to Genome: 1015700</TITLE>
         <STUDY_REF accession="SRP000677" refcenter="NHGRI" refname="phs000178" />
         <DESCRIPTION>UNC RNA-Seq Workflow V2 - Mapsplice Alignment to Genome - 23b47813-7a77-44ca-b650-31a319c1f497</DESCRIPTION>
