@@ -19,9 +19,10 @@ use Scalar::Util qw( blessed );  # Get class of objects
 use File::Path;    # Create file paths
 
 # Cpan modules
-use File::HomeDir qw(home);             # Finding the home directory is hard.
-use File::ShareDir qw(dist_dir);        # Access data files from install.
-use Data::GUID;                         # Unique uuids.
+use File::HomeDir qw(home);     # Finding the home directory is hard.
+use File::Share qw(dist_dir);   # Access data files from install.
+use Data::GUID;                 # Unique uuids.
+use Template;
 
 # GitHub only modules
 use Bio::SeqWare::Config;          # Config file parsing.
@@ -889,21 +890,26 @@ sub do_meta_generate {
     my $self = shift;
     my $uploadHR;
     eval {
-        my $uploadHR = $self->dbSetRunning( 'launch', 'meta' );
+        my $uploadHR = $self->dbSetRunning( 'launch', 'meta_generate' );
+
         if ($uploadHR)  {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
             $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
             $dataHR->{'linkName'} = $self->_metaGenerate_linkBam( $dataHR );
-            $self->_metaGenerate_makeFileFromTemplate( $dataHR, "analysis.xml",   "analysis_fastq.xml.template" );
-            $self->_metaGenerate_makeFileFromTemplate( $dataHR, "run.xml",        "run_fastq.xml.template" );
-            $self->_metaGenerate_makeFileFromTemplate( $dataHR, "experiment.xml", "experiment_fastq.xml.template" );
+            my $analysisXml   = File::Spec->catFile($dataHR->{'dataDir'}, 'analysis.xml'  );
+            my $runXml        = File::Spec->catFile($dataHR->{'dataDir'}, 'run.xml'        );
+            my $experimentXml = File::Spec->catFile($dataHR->{'dataDir'}, 'experiment.xml' );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $analysisXml   );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $runXml        );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $experimentXml );
+
             $self->dbSetDone( $uploadHR->{'upload_id'}, 'meta');
         }
     };
     if ($@) {
         my $error = $@;
         if ($uploadHR) {
-            $error = $self->dbSetFail( $uploadHR, 'meta', $error);
+            $error = $self->dbSetFail( $uploadHR, 'meta_generate', $error);
         }
         dbDie($error);
     }
@@ -1272,11 +1278,11 @@ sub _metaGenerate_getData {
                vf.file_path,
                vf.workflow          as workflow_name,
                vf.workflow_version,
-               vf.algorithm         as workflow_algorithm
+               vf.algorithm         as workflow_algorithm,
                p.instrument_model,
                l.sw_accession       as lane_accession,
                e.sw_accession       as experiment_accession,
-               e.name               as library_prep
+               e.name               as library_prep,
                e.description        as experiment_description,
                e.experiment_id,
                s.sw_accession       as sample_accession,
@@ -1314,7 +1320,6 @@ sub _metaGenerate_getData {
             'lane_accession'       => $rowHR->{'lane_accession'},
             'experiment_accession' => $rowHR->{'experiment_accession'},
             'sample_accession'     => $rowHR->{'sample_accession'},
-            'tcga_uuid'            => $rowHR->{'tcga_uuid'},
         };
 
         # analysis.xml
@@ -1389,6 +1394,7 @@ sub _metaGenerate_getData {
             'tcga_uuid'              => $rowHR->{'tcga_uuid'},
             'libraryPrep'            => $libraryPrep,
             'LibraryLayout'          => "PAIRED",
+            'readEnds'               => $readEnds,
             'baseCoord'              => $baseCoord,
             'instrument_model'       => $rowHR->{'instrument_model'},
             'preservation'           => $preservation,

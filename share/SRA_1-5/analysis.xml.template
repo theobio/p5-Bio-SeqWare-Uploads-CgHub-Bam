@@ -2,7 +2,7 @@
 <ANALYSIS_SET
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:noNamespaceSchemaLocation="http://www.ncbi.nlm.nih.gov/viewvc/v1/trunk/sra/doc/SRA_1-5/SRA.analysis.xsd?view=co">
-    <ANALYSIS center_name="UNC-LCCC" alias="[% upload_accession %]" analysis_date="[% analysisDate %]" analysis_center="UNC-LCCC">
+    <ANALYSIS center_name="UNC-LCCC" alias="[% uploadIdAlias %]" analysis_date="[% analysisDate %]" analysis_center="UNC-LCCC">
         <TITLE>Mapsplice Alignment to Genome: [% workflow_accession %]</TITLE>
         <STUDY_REF accession="SRP000677" refcenter="NHGRI" refname="phs000178" />
         <DESCRIPTION>UNC RNA-Seq Workflow V2 - Mapsplice Alignment to Genome - [% tcga_uuid %]</DESCRIPTION>
@@ -12,7 +12,7 @@
                     <STANDARD short_name="HG19" />
                 </ASSEMBLY>
                 <RUN_LABELS>
-                    <RUN refcenter="UNC-LCCC" refname="UNCID:[% lane_accession %]" re abel="[% readGroup %]" data_block_name="[% fileNoExtension %]"/>
+                    <RUN refcenter="UNC-LCCC" refname="UNCID:[% lane_accession %]" read_group_label="[% readGroup %]" data_block_name="[% fileNoExtension %]"/>
                 </RUN_LABELS>
                 <SEQ_LABELS>
                     <SEQUENCE seq_label="chr1" data_block_name="[% fileNoExtension %]" accession="NC_000001.10"/>

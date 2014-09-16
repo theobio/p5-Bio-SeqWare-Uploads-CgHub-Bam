@@ -24,7 +24,7 @@
                     <READ_TYPE>Forward</READ_TYPE>
                     <BASE_COORD>1</BASE_COORD>
                 </READ_SPEC>
-                [% IF read_ends > 1 %]<READ_SPEC>
+                [% IF readEnds > 1 %]<READ_SPEC>
                     <READ_INDEX>1</READ_INDEX>
                     <READ_CLASS>Application Read</READ_CLASS>
                     <READ_TYPE>Reverse</READ_TYPE>

@@ -7,8 +7,9 @@ use File::Spec;
 use File::Copy;
 
 use File::Temp;                      # Simple files for testing
-use Test::More 'tests' => 4;     # Main test module; run this many tests
+use Test::More 'tests' => 5;     # Main test module; run this many tests
 use Test::Exception;
+use Test::File::Contents;
 
 BEGIN {
     *CORE::GLOBAL::readpipe = \&mock_readpipe; # Must be before use
@@ -16,20 +17,39 @@ BEGIN {
 }
 
 # Mock system calls.
-my $mock_readpipe = { 'mock' => 0, 'ret' => undef , 'exit' => 0 };
+# Mock, set mock =1, unmock, set mock = 0.
+# Mock one, set ret and exit
+# Mock several, set session = [{ret=>, exit=>}, ...]
+my $mock_readpipe = { 'mock' => 0, 'ret' => undef , 'exit' => 0, '_idx' => undef };
 
 sub mock_readpipe {
     my $var = shift;
     my $retVal;
     if ( $mock_readpipe->{'mock'} ) {
-        $retVal = $mock_readpipe->{'ret'};
-        $? = $mock_readpipe->{'exit'};
+        if (! $mock_readpipe->{'session'}) {
+            $retVal = $mock_readpipe->{'ret'};
+            $? = $mock_readpipe->{'exit'};
+        }
+        else {
+            my @session = @{$mock_readpipe->{'session'}};
+            my $idx = $mock_readpipe->{'_idx'};
+            if (! defined $idx) {
+                $idx = 0;
+            }
+            if ($idx >= @session) {
+                die "Mock::ReadPipeException: Not enough session elements defined.\n";
+            }
+            $retVal = $mock_readpipe->{'session'}->[$idx]->{'ret'};
+            $? = $mock_readpipe->{'session'}->[$idx]->{'exit'};
+            $mock_readpipe->{'_idx'} += 1;
+        }
     }
     else {
         $retVal = CORE::readpipe($var);
     }
     return $retVal;
 }
+
 
 my $CLASS = 'Bio::SeqWare::Uploads::CgHub::Bam';
 my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 meta-generate);
@@ -50,13 +70,14 @@ my $GOOD_ANALYSIS_XML_FILE = File::Spec->catfile( $DATA_DIR, 'analysis.xml' );
 my $FAKE_BAM_FILE = File::Spec->catfile( $TEMP_DIR, 'fake.bam' );
 copy($GOOD_RUN_XML_FILE, $FAKE_BAM_FILE) or die "Can't copy file for testing";
 
-subtest( '_metaGenerate_getDataReadLength()' => \&test_metaGenerate_getDataReadLength );
-subtest( '_metaGenerate_getDataReadCount()' => \&test_metaGenerate_getDataReadCount );
-subtest( '_metaGenerate_linkBam()' => \&test_metaGenerate_linkBam );
-subtest( '_metaGenerate_makeDataDir()' => \&test_metaGenerate_makeDataDir );
-# subtest( '_metaGenerate_getData()' => \&test_metaGenerate_getData );
+subtest( '_metaGenerate_getDataReadLength()' => \&test_getDataReadLength );
+subtest( '_metaGenerate_getDataReadCount()' => \&test_getDataReadCount );
+subtest( '_metaGenerate_linkBam()' => \&test_linkBam );
+subtest( '_metaGenerate_makeDataDir()' => \&test_makeDataDir );
+# subtest( '_metaGenerate_getData()' => \&test_getData );
+subtest( '_metaGenerate_makeFileFromTemplate()' => \&test_makeFileFromTemplate );
 
-sub test_metaGenerate_makeDataDir {
+sub test_makeDataDir {
      plan( tests => 5 );
 
     {
@@ -93,7 +114,7 @@ sub test_metaGenerate_makeDataDir {
 
 }
 
-sub test_metaGenerate_linkBam {
+sub test_linkBam {
     plan( tests => 6 );
 
     my $obj = makeBamForMetaGenerate();
@@ -163,7 +184,7 @@ sub test_metaGenerate_linkBam {
     }
 }
 
-sub test_metaGenerate_getDataReadLength {
+sub test_getDataReadLength {
     plan( tests => 6);
 
     # Good test
@@ -263,7 +284,7 @@ sub test_metaGenerate_getDataReadLength {
     }
 }
 
-sub test_metaGenerate_getDataReadCount {
+sub test_getDataReadCount {
     plan( tests => 5);
 
     # Lookup returns valid value - 2
@@ -363,7 +384,7 @@ sub test_metaGenerate_getDataReadCount {
    }
 }
 
-sub test_metaGenerate_getData {
+sub test_getData {
     plan( tests => 1 );
 
     # Chosen to match analysis.xml data file
@@ -446,7 +467,9 @@ sub test_metaGenerate_getData {
         my $obj = makeBamForMetaGenerate();
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
-        $mock_readpipe->{'ret'} = "$SAMTOOLS_RETURN";
+        $mock_readpipe->{'session'} = [
+            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+        ];
         my $got = $obj->_metaGenerate_getData( $uploadHR );
         my $want = $expectData;
         {
@@ -458,6 +481,132 @@ sub test_metaGenerate_getData {
 
 }
 
+sub test_makeFileFromTemplate {
+    plan( tests => 15);
+
+    my $uploadHR = {
+        'upload_id'         => 23985,
+        'sample_id'         => 18254,
+        'target'            => 'CGHUB',
+        'status'            => 'CGHUB_Complete',
+        'cghub_analysis_id' => '41a12166-ec7e-447b-94b2-9f3dd96401ca',
+        'tstmp'             => '2014-08-13 10:06:46.949567',
+        'metadata_dir'      => 'datastore/tcga/cghub/v2_uploads',
+        'external_status'   => 'live',
+    };
+
+    # Data (as would be needed for the target xml files.)
+    my $linkName = 'UNCID_2462755.23b47813-7a77-44ca-b650-31a319c1f497.sorted_genome_alignments.bam';
+
+    my $runDataHR = {
+        'lane_accession'       => 2449977,
+        'experiment_accession' => 975937,
+        'sample_accession'     => 2449976,
+    };
+
+    my $analysisDataHR = {
+        'uploadIdAlias'      => 2574890,
+        'analysisDate'       => '2014-05-19T15:47:52.663',
+        'workflow_accession' => 1015700,
+        'tcga_uuid'          => '23b47813-7a77-44ca-b650-31a319c1f497',
+        'lane_accession'     => 2449977,
+        'readGroup'          => '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC',
+        'fileNoExtension'    => 'sorted_genome_alignments',
+        'workflow_name'      => 'MapspliceRSEM',
+        'workflow_version'   => '0.7.4',
+        'workflow_algorithm' => 'samtools-sort-genome',
+        'file_accession'     => 2462755,
+        'file_md5sum'        => '04f5a22164bb399f61a2caee8ecb048b',
+        'uncFileSampleName'  => 'UNCID_2462755.23b47813-7a77-44ca-b650-31a319c1f497.sorted_genome_alignments.bam',
+    };
+
+        my $experimentDataHR = {
+            'experiment_accession'   => 975937,
+            'sample_accession'       => 2449976,
+            'experiment_description' => 'TCGA RNA-Seq Paired-End Experiment',
+            'tcga_uuid'              => '23b47813-7a77-44ca-b650-31a319c1f497',
+            'libraryPrep'            => 'Illumina TruSeq',
+            'LibraryLayout'          => "PAIRED",
+            'readEnds'               => 2,
+            'baseCoord'              => 49,
+            'instrument_model'       => 'Illumina HiSeq 2000',
+            'preservation'           => 'FROZEN',
+        };
+
+    my $obj = makeBamForMetaGenerate();
+    # run.xml
+    {
+
+        my $sampleFileName = File::Spec->catfile( "t", "Data", "Xml", "run.xml" );
+        my $outFileName = File::Spec->catfile( "$TEMP_DIR", "run.xml" );
+        my $templateFileName = File::Spec->catfile($obj->{'templateBaseDir'}, $obj->{'xmlSchema'}, "run.xml.template" );
+
+        # Files for use by test are available
+        {
+            ok( (-f $templateFileName), "Can find run.xml.template");
+            ok( (-f $sampleFileName), "Can find run.xml example");
+        }
+
+        # Absolute paths
+        {
+            my $runXml = $obj->_metaGenerate_makeFileFromTemplate( $runDataHR, $outFileName, $templateFileName );
+            {
+                is ( $runXml, $outFileName, "Appeared to create run.xml file");
+                ok( (-f $runXml),   "Can find run.xml file");
+                files_eq_or_diff( $runXml, $sampleFileName, "run.xml file generated correctly." );
+            }
+        }
+    }
+
+    # analysis.xml
+    {
+
+        my $sampleFileName = File::Spec->catfile( "t", "Data", "Xml", "analysis.xml" );
+        my $outFileName = File::Spec->catfile( "$TEMP_DIR", "analysis.xml" );
+        my $templateFileName = File::Spec->catfile($obj->{'templateBaseDir'}, $obj->{'xmlSchema'}, "analysis.xml.template" );
+
+        # Files for use by test are available
+        {
+            ok( (-f $templateFileName), "Can find analysis.xml.template");
+            ok( (-f $sampleFileName), "Can find analysis.xml example");
+        }
+
+        # Absolute paths
+        {
+            my $analysisXml = $obj->_metaGenerate_makeFileFromTemplate( $analysisDataHR, $outFileName, $templateFileName );
+            {
+                is ( $analysisXml, $outFileName, "Appeared to create analysis.xml file");
+                ok( (-f $analysisXml),   "Can find analysis.xml file");
+                files_eq_or_diff( $analysisXml, $sampleFileName, "analysis.xml file generated correctly." );
+            }
+        }
+    }
+
+    # experment.xml
+    {
+
+        my $sampleFileName = File::Spec->catfile( "t", "Data", "Xml", "experiment.xml" );
+        my $outFileName = File::Spec->catfile( "$TEMP_DIR", "experiment.xml" );
+        my $templateFileName = File::Spec->catfile($obj->{'templateBaseDir'}, $obj->{'xmlSchema'}, "experiment.xml.template" );
+
+        # Files for use by test are available
+        {
+            ok( (-f $templateFileName), "Can find experiment.xml.template");
+            ok( (-f $sampleFileName), "Can find experiment.xml example");
+        }
+
+        # Absolute paths
+        {
+            my $experimentXml = $obj->_metaGenerate_makeFileFromTemplate( $experimentDataHR, $outFileName, $templateFileName );
+            {
+                is ( $experimentXml, $outFileName, "Appeared to create experiment.xml file");
+                ok( (-f $experimentXml),   "Can find experiment.xml file");
+                files_eq_or_diff( $experimentXml, $sampleFileName, "experiment.xml file generated correctly." );
+            }
+        }
+    }
+
+}
 # Data providers
 
 sub makeBamForMetaGenerate {
