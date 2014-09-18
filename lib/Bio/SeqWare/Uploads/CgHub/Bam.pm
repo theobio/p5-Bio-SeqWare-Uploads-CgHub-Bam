@@ -938,7 +938,7 @@ sub do_meta_generate {
     my $uploadHR;
     eval {
         $uploadHR = $self->dbSetRunning( 'launch', 'meta-generate' );
-
+        sayDebug( 'Running meta_generate on: ', $uploadHR );
         if ($uploadHR)  {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
             $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
@@ -1356,7 +1356,7 @@ sub _metaGenerate_getData {
     my $self = shift;
     my $uploadHR = shift;
 
-    $CLASS->ensureHashHasValue($uploadHR, 'upload_id');
+    $CLASS->ensureHashHasValue($uploadHR, 'upload_id', "GetData needed hash with upload_id defined.");
     my $upload_id = $uploadHR->{'upload_id'};
 
     my $dbh = $self->getDbh();
@@ -1518,7 +1518,7 @@ sub _metaGenerate_getData {
         $self->sayDebug( "Template data is: ", $dataHR );
 
         for my $key (sort keys %$dataHR) {
-            $CLASS->ensureHashHasValue($dataHR, $key);
+            $CLASS->ensureHashHasValue($dataHR, $key, "Problem with data, key \'%key\'");
         }
     };
     if ($@) {
@@ -1698,8 +1698,8 @@ sub _metaGenerate_makeDataDir {
     my $self = shift;
     my $dataHR = shift;
 
-    my $baseDir     = $CLASS->ensureHashHasValue( $dataHR, 'metadata_dir');
-    my $analysisId  = $CLASS->ensureHashHasValue( $dataHR, 'cghub_analysis_id');
+    my $baseDir     = $CLASS->ensureHashHasValue( $dataHR, 'metadata_dir', "Making data dir requires metadata_dir key");
+    my $analysisId  = $CLASS->ensureHashHasValue( $dataHR, 'cghub_analysis_id', "Making data dir requires metadata_dir key");
     $CLASS->ensureIsDir( $baseDir );
 
     my $wantDir = File::Spec->catdir( $baseDir, $analysisId );
