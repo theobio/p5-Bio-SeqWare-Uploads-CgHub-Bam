@@ -6,6 +6,9 @@ lib/Bio/SeqWare/Uploads/CgHub/Bam.pm
 MANIFEST			This list of files
 MANIFEST.SKIP
 README.md
+share/SRA_1-5/analysis.xml.template
+share/SRA_1-5/experiment.xml.template
+share/SRA_1-5/run.xml.template
 t/00-load.t
 t/Bam.t
 t/manifest.t
@@ -29,6 +32,9 @@ t/Commands/do-status-local.t
 't/Data/badShortDataLine.txt'
 't/Data/badShortHeaderLine.txt'
 't/Data/sampleList.txt'
+t/Data/Xml/analysis.xml
+t/Data/Xml/experiment.xml
+t/Data/Xml/run.xml
 TODO.md
 Makefile.PL
 META.yml

@@ -22,7 +22,7 @@ use File::Path;    # Create file paths
 use File::HomeDir qw(home);     # Finding the home directory is hard.
 use File::Share qw(dist_dir);   # Access data files from install.
 use Data::GUID;                 # Unique uuids.
-use Template;
+use Template;                   # Template files + data => output files.
 
 # GitHub only modules
 use Bio::SeqWare::Config;          # Config file parsing.

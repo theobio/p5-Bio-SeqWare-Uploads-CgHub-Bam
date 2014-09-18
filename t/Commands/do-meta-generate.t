@@ -3,16 +3,19 @@ use 5.014;
 use strict;
 use warnings FATAL => 'all';
 
-use File::Spec;
-use File::Copy;
-use Data::Dumper;
+# Core
+use File::Spec;                  # Generic file handling.
+use File::Copy;                  # Copy a file
+use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
+use File::Temp;                  # Simple transient files for testing
 
-use File::Temp;                      # Simple files for testing
-use Test::More 'tests' => 10;     # Main test module; run this many tests
-use Test::Exception;
-use Test::File::Contents;
-use Test::MockModule;
+use Test::More 'tests' => 10;    # Main test module; run this many tests
+
+# CPAN
+use Test::Exception;             # Testing where code dies and errors
+use Test::File::Contents;        # Comparing files
+use Test::MockModule;            # Fake subroutine return values remotely
 
 BEGIN {
     *CORE::GLOBAL::readpipe = \&mock_readpipe; # Must be before use

@@ -4,7 +4,7 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 # VERSION
 
-Version 0.000.002
+Version 0.000.003
 
 # SYNOPSIS
 
@@ -24,8 +24,8 @@ message. Will initialize and validate options.
 
 ## getTimestamp()
 
-    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp().
-    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp( $unixTime ).
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimestamp().
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimestamp( $unixTime ).
 
 Returns a timestamp formated like YYYY-MM-DD\_HH:MM:SS, zero padded, 24 hour
 time. If a parameter is passed, it is assumed to be a unix epoch time (integer
@@ -57,6 +57,17 @@ defined, then dies with error message:
 
     "ValidationErrorNotDefined: Expected a defined value.\n";
 
+## ensureHashHasValue
+
+    my $val = $CLASS->ensureHashHasValue( $hashRef, $key, [$error] );
+
+Returns $hashRef->{"$key"} if it is defined, otherwise dies with $error.
+If $error is not defined, then dies with an appropriate message, one of:
+
+    "ValidationErrorNotDefined: Expected a defined hash/hash-ref.\n";
+    "ValidationErrorNotExists: Expected key $key to exist.\n";
+    "ValidationErrorNotDefined: Expected a defined hash/hash-ref value for key $key.\n";
+
 ## ensureIsntEmptyString
 
     my $val = $CLASS->ensureIsntEmptyString( $val, [$error] );
@@ -65,6 +76,43 @@ Returns $val if, stringified, it is not an empty string. Otherwise dies with
 $error. If $error is not defined, then dies with error message:
 
     "ValidationErrorBadString: Expected a non-empty string.\n";
+
+## ensureIsFile
+
+    my $filename = $CLASS->ensureIsFile( $filename, [$error] );
+
+Returns $filename if it is defined and -f works, otherwise dies with $error.
+If $error is not defined, then dies with error message:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "FileNotFoundException: Error looking up file named $filename. Error was:\n\t$!";
+
+## ensureIsDir
+
+    my $dirname = $CLASS->ensureIsFile( $dirname, [$error] );
+
+Returns $dirname if it is defined and -d works, otherwise dies with $error.
+If $error is not defined, then dies with error message:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "FileNotFoundException: Error looking up file named $dirname. Error was:\n\t$!";
+
+## ensureIsObject
+
+    my $object = ensureIsObject( $object, [$wantClass], [$error] );
+
+Returns the specified object if it is an object, or throws an error. If
+$wantClass is specified, then it is an error if $object is not of class
+$wantClass. Inheritance is ignored.
+
+If an error is thrown, either dies with $error, if specified, or dies with one
+of the following messages:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "ValueNotObjectException: Not an object.\n";
+    "ValueNotExpectedClass: Wanted object of class $wantClass, "
+        . "was $objectClass.\n";
+    
 
 ## checkCompatibleHash
 
@@ -76,6 +124,46 @@ in a hash-ref pointing to an array with the values from the first and second
 hashes, respectively. Putting the smaller hash first is the most efficient
 thing to do.
 
+## reformatTimestamp()
+
+    my $newFormatTimestamp = $CLASS->reformatTimestamp( $timestamp );
+
+Takes a postgresql formatted timestamp (without time zone) and converts it to
+an aml time stamp by replacing the blank space between the date and time with
+a capital "T". Expects the incoming $timestamp to be formtted as
+`qr/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\d{2}\.?\d*$/`
+
+## getFileBaseName
+
+    my ($base, $ext) = $CLASS->getFileBaseName( "$filePath" );
+
+Given a $filePath, extracts the filename and returns the file base name $base
+and extension $ext. Everything up to the first "."  is returned as the $base,
+everything after as the $ext. $filePath may or may not include directories,
+relative or absolute, but the last element is assumed to be a filename (unless
+it ends with a directory marker, in which case it is treated the same as if
+$filePath was ""). If there is nothing before/after the ".", an empty string
+will be returned for the $base and/or $ext. If there is no ., $ext will be
+undef. Directory markers are "/", ".", or ".." on Unix
+
+### Examples:
+
+              $filePath       $base        $ext
+     ------------------  ----------  ----------
+        "base.ext"           "base"       "ext"
+        "base.ext.more"      "base"  "ext.more"
+             "baseOnly"  "baseOnly"       undef
+            ".hidden"            ""    "hidden"
+        "base."              "base"          ""
+            "."                  ""          ""
+                     ""          ""       undef
+                  undef      (dies)            
+     "path/to/base.ext"      "base"       "ext"
+    "/path/to/base.ext"      "base"       "ext"
+     "path/to/"              ""           undef
+     "path/to/."             ""           undef
+     "path/to/.."            ""           undef
+
 # INSTANCE METHODS
 
 ## run()
@@ -83,7 +171,8 @@ thing to do.
     $obj->run()
 
 Implements the actions taken when run as an application. Currently only
-returns 1 if succeds, or dies with an error message.
+returns 1 if succeds, or prints error and returns 0 if something dies with
+an error message.
 
 # INTERNAL METHODS
 
@@ -242,19 +331,19 @@ Not intended to be called directly.
 Called automatically by runner framework to implement the status-local command.
 Not intended to be called directly.
 
-## setDone
+## dbSetDone
 
-    my $self->setDone( $hashRef, $step );
+    my $self->dbSetDone( $hashRef, $step );
 
-Simple a wrapper for setUploadStatus, returns the result of calling that with
+Simple a wrapper for dbSetUploadStatus, returns the result of calling that with
 the "upload\_id" key from the provided $hashRef and a new status of
 "$step" . "\_done"
 
-## setFail
+## dbSetFail
 
-    my $self->setDone( $hashRef, $step, $error );
+    my $self->dbSetDone( $hashRef, $step, $error );
 
-A wrapper for setUploadStatus, Calls that with the "upload\_id" key from the
+A wrapper for dbSetUploadStatus, Calls that with the "upload\_id" key from the
 provided $hashRef and a new status of
 "$step" . "\_fail\_" . getErrorName( $error )
 
@@ -262,9 +351,18 @@ The $error will be return, but if an error occurs in trying to set fail, that
 error will be \*prepended\* to $error before returning, separated with the string
 "\\tTried to fail run because of:\\n"
 
-## setUploadStatus
+## dbSetRunning
 
-    my $self->setUploadStatus( $upload_id, $newStatus )
+    my $uploadRec = dbSetRunning( $stepDone, $stepRunning )
+
+Given the previous step and the next step, finds one record in the database
+in state <$stepDone>\_done, sets its status to <$stepRunning>\_running, and
+returns the equivqalent hash-ref. This is done in a transaction so it is safe
+to run these steps overlapping each other.
+
+## dbSetUploadStatus
+
+    my $self->dbSetUploadStatus( $upload_id, $newStatus )
 
 Changes the status of the specified upload record to the specified status.
 Either returns 1 for success or dies with error.
@@ -289,6 +387,86 @@ data recieved from the generic lookup routine to the specific upload
 information needed by this program in managing uploads of bam files to cghub.
 This is a potential change point.
 
+## \_makeFileFromTemplate
+
+    $obj->_makeFileFromTemplate( $dataHR, $outFile );
+    $obj->_makeFileFromTemplate( $dataHR, $outFile, $templateFile );
+
+Takes the $dataHR of template values and uses it to fill in the
+a template ($templateFile) and generate an output file ($outFile). Returns
+the path to the created $outFile file, or dies with error.
+When $templateFile are relative, default directories are
+used from the object.
+
+USES
+
+    'templateBaseDir' = Absolute basedir to use if $templateFile is relative.
+    'xmlSchema'       = Schema version, used as subdir under templateBaseDir
+                        if $templateFile is relative.
+
+## \_metaGenerate\_getDataPreservation
+
+    my $preservation = $self->_metaGenerate_getDataPreservation( 'preservation );
+
+If preservation contains "FFPE" (case insensitively), return 'FFPE' else
+default to 'FROZEN';
+
+## \_metaGenerate\_getDataLibraryPrep
+
+    my $libraryPrep = $self->_metaGenerate_getDataLibraryPrep( $library_prep );
+
+The library prep is either something containing the string TotalRNA, case
+insensitively, in which case it is returned as is, or it is set to
+Illumina TruSeq.
+
+## \_metaGenerate\_getData
+
+    $self->_metaGenerate_getData()
+
+## \_metaGenerate\_getDataReadCount
+
+    $ends = $self->_metaGenerate_getDataReadCount( $eperiment.sw_accession );
+
+Returns 1 if single ended, 2 if paired-ended. Based on the number
+of application reads in the associated experiment\_spot\_design\_read\_spec.
+Dies if any other number found, or if any problem with db access.
+
+## \_metaGenerate\_getDataReadGroup
+
+    my $readGroup = $self->_metaGenerate_getDataReadGroup( $bamFile );
+
+Gets the read group from the bam file using samtools and some unix tools.
+
+## \_metaGenerate\_getDataReadLength
+
+    $baseCountPerRead = _metaGenerate_getDataReadLength( $bam_file_path );
+
+Examines first 1000 lines of the bam file and returns the length of the
+longest read found.
+
+## \_metaGenerate\_makeDataDir
+
+    my $dataDir = $self->_metaGenerate_makeDataDir( $dataHR );
+
+Creates the target data directory which should just be
+catdir ($dataHR->{'metadata\_dir'}, $dataHR->{'cghub\_analysis\_id'});
+The pre-existance of $dataHR->{'metadata\_dir'} is
+checked. If succeeds, returns the name of the new dataDir, else dies
+with error.
+
+## \_metaGenerate\_linkBam
+
+    my $bamLink = $self->_metaGenerate_linkBam( $dataHR );
+
+Creates a link to $dataHR->{'file\_path'} in the $dataHR->{'dataDir'}.
+The file\_path and the dataDir must exist. The link is named after the
+<filename> extracted from the file\_path, The <file\_accession>, and the
+<sample\_tcga\_uuid> as
+
+    UNCID_<file_accession>.<sample_tcga_uuid>.<filename.
+
+The link name only (no path) will be returned.
+
 ## dbInsertUpload
 
     my $upload_id = $self->dbInsertUpload( $recordHR );
@@ -299,6 +477,24 @@ upload must be in the provided hash, with the keys the field names from the
 upload table.
 
 Returns the id of the upload record inserted.
+
+## dbDie
+
+    $self->dbDie( $errorMessage );
+
+Call to die due to a database error. Wraps a call to die with code to clean up
+the database connection, rolling back any open transaction and closing and 
+destroying the current database connection object.
+
+It will check if a transaction was not finished and do a rollback, If that
+was tried and failed, the error message will be appended with:
+"Also:\\n\\tRollback failed because of:\\n$rollbackError", where $rollbackError
+is the error caught during the attmptedrollback.
+
+All errors during disconnect are ignored.
+
+If the error thrown by dbDie is caught and handled, a new call to getDbh
+will be needed as the old connection is no more.
 
 ## dbInsertUploadFile
 
@@ -420,6 +616,24 @@ with Data::Dumper before printing.
 
 See also sayVerbose, sayDebug.
 
+## sayError
+
+    $self->sayError("Error message to print");
+    $self->sayError("Something", $object);
+
+Output text like print, but takes object option like sayVerbose and
+sayDebug.
+
+If the --log option is set, adds a prefix to each line of a message
+using logifyMessage.
+
+If an object parameter is passed, it will be printed on the following line.
+Normal stringification is performed, so $object can be anything, including
+another string, but if it is a hash-ref or an array ref, it will be formated
+with Data::Dumper before printing.
+
+See also sayVerbose, sayDebug.
+
 # AUTHOR
 
 Stuart R. Jefferys, `<srjefferys (at) gmail (dot) com>`
@@ -444,7 +658,7 @@ You can install this module directly from github using cpanm
     $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
     # Any specific release:
-    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.002.tar.gz
+    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.003.tar.gz
 
 You can also manually download a release (zipped file) from github at
 [https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases](https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases).

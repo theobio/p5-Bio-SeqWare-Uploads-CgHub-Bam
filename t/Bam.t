@@ -1,19 +1,22 @@
 #! /usr/bin/env perl
 
+# Core modules
 use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
+use File::Spec;                  # Generic file handling.
+
+use Test::More 'tests' => 31;    # Main test module; run this many subtests
+
+# CPAN modules
+use File::HomeDir qw(home);      # Finding the home directory is hard.
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 31;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
-
 use Test::MockModule;            # Fake subroutine returns from other modules.
 use DBD::Mock;                   # Fake database results.
 use Test::MockObject::Extends;   # Fake subroutines from this module.
 
-use File::HomeDir qw(home);  # Finding the home directory is hard.
-use File::Spec;              # Generic file handling.
-
+# Non CPAN modules
 use Bio::SeqWare::Config;          # To get default config file name
 use Bio::SeqWare::Db::Connection;  # Database handle generation, for mocking
 

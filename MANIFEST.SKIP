@@ -61,3 +61,6 @@
 # Eclipse IDE
 .project
 .includepath
+
+# Temporary files that span releases but are not wanted permanently
+generate_cghub_metadata.pl
