@@ -15,10 +15,14 @@ use Pod::Usage;    # Usage messages for --help and option errors.
 use File::Spec::Functions qw(catfile);  # Generic file handling.
 use IO::File ;     # File io using variables as fileHandles.
                    # Note: no errors on open failure.
+use Scalar::Util qw( blessed );  # Get class of objects
+use File::Path;    # Create file paths
 
 # Cpan modules
-use File::HomeDir qw(home);             # Finding the home directory is hard.
-use Data::GUID;                         # Unique uuids.
+use File::HomeDir qw(home);     # Finding the home directory is hard.
+use File::Share qw(dist_dir);   # Access data files from install.
+use Data::GUID;                 # Unique uuids.
+use Template;
 
 # GitHub only modules
 use Bio::SeqWare::Config;          # Config file parsing.
@@ -83,8 +87,8 @@ sub new {
 
 =head2 getTimestamp()
 
-    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp().
-    Bio::SeqWare::Uploads::CgHub::Bam->getTimeStamp( $unixTime ).
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimestamp().
+    Bio::SeqWare::Uploads::CgHub::Bam->getTimestamp( $unixTime ).
 
 Returns a timestamp formated like YYYY-MM-DD_HH:MM:SS, zero padded, 24 hour
 time. If a parameter is passed, it is assumed to be a unix epoch time (integer
@@ -166,6 +170,52 @@ sub ensureIsDefined {
     return $value
 }
 
+=head2 ensureHashHasValue
+
+    my $val = $CLASS->ensureHashHasValue( $hashRef, $key, [$error] );
+
+Returns $hashRef->{"$key"} if it is defined, otherwise dies with $error.
+If $error is not defined, then dies with an appropriate message, one of:
+
+    "ValidationErrorNotDefined: Expected a defined hash/hash-ref.\n";
+    "ValidationErrorNotExists: Expected key $key to exist.\n";
+    "ValidationErrorNotDefined: Expected a defined hash/hash-ref value for key $key.\n";
+=cut
+
+sub ensureHashHasValue {
+    my $class = shift;
+    my $hashHR = shift;
+    my $key = shift;
+    my $error = shift;
+
+    if (! defined $hashHR) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined hash/hash-ref.\n";
+        }
+        die $error;
+    }
+    if (ref( $hashHR ) ne 'HASH') {
+        if (! defined $error) {
+            $error = "ValueNotHashRefException: Expected a hash-ref.\n";
+        }
+        die $error;
+    }
+    if (! exists $hashHR->{"$key"}) {
+        if (! defined $error) {
+            $error = "KeyNotExistsException: Expected key $key to exist.\n";
+        }
+        die $error;
+    }
+    if (! defined $hashHR->{"$key"}) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined hash/hash-ref value for key $key.\n"
+        }
+        die $error;
+    }
+
+    return $hashHR->{"$key"};
+}
+
 =head2 ensureIsntEmptyString
 
     my $val = $CLASS->ensureIsntEmptyString( $val, [$error] );
@@ -189,6 +239,114 @@ sub ensureIsntEmptyString {
         die $error;
     }
     return $value
+}
+
+=head2 ensureIsFile
+
+    my $filename = $CLASS->ensureIsFile( $filename, [$error] );
+
+Returns $filename if it is defined and -f works, otherwise dies with $error.
+If $error is not defined, then dies with error message:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "FileNotFoundException: Error looking up file named $filename. Error was:\n\t$!";
+
+=cut
+
+sub ensureIsFile {
+    my $class = shift;
+    my $filename = shift;
+    my $error = shift;
+    if (! defined $filename) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined value.\n";
+        }
+        die $error;
+    }
+    if (! -f $filename) {
+        if (! defined $error) {
+            $error = "FileNotFoundException: Error looking up file $filename. Error was:\n\t$!";
+        }
+        die $error;
+    }
+    return $filename;
+}
+
+=head2 ensureIsDir
+
+    my $dirname = $CLASS->ensureIsFile( $dirname, [$error] );
+
+Returns $dirname if it is defined and -d works, otherwise dies with $error.
+If $error is not defined, then dies with error message:
+
+    "ValueNotDefinedException: Expected a defined value.\n";
+    "FileNotFoundException: Error looking up file named $dirname. Error was:\n\t$!";
+
+=cut
+
+sub ensureIsDir {
+    my $class = shift;
+    my $dirname = shift;
+    my $error = shift;
+    if (! defined $dirname) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined value.\n";
+        }
+        die $error;
+    }
+    if (! -d $dirname) {
+        if (! defined $error) {
+            $error = "DirNotFoundException: Error looking up directory $dirname. Error was:\n\t$!";
+        }
+        die $error;
+    }
+    return $dirname;
+}
+
+=head2 ensureIsObject
+
+    my $object = ensureIsObject( $object, [$wantClass], [$error] );
+
+Returns the specified object if it is an object, or throws an error. If
+$wantClass is specified, then it is an error if $object is not of class
+$wantClass. Inheritance is ignored.
+
+If an error is thrown, either dies with $error, if specified, or dies with one
+of the following messages:
+
+ "ValueNotDefinedException: Expected a defined value.\n";
+ "ValueNotObjectException: Not an object.\n";
+ "ValueNotExpectedClass: Wanted object of class $wantClass, "
+     . "was $objectClass.\n";
+ 
+=cut
+
+sub ensureIsObject {
+    my $class = shift;
+    my $object = shift;
+    my $wantClass = shift;
+    my $error = shift;
+
+    if (! defined $object) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined value.\n";
+        }
+        die $error;
+    }
+    my $objectClass = blessed $object;
+    if (! defined $objectClass) {
+        if (! defined $error) {
+            $error = "ValueNotObjectException: Not an object.\n";
+        }
+        die $error;
+    }
+    if (defined $wantClass && $objectClass ne $wantClass) {
+        if (! defined $error) {
+            $error = "ValueNotExpectedClass: Wanted object of class $wantClass, was $objectClass.\n";
+        }
+        die $error;
+    }
+    return $object;
 }
 
 =head2 checkCompatibleHash
@@ -240,6 +398,86 @@ sub checkCompatibleHash {
     return $bad;
 }
 
+=head2 reformatTimestamp()
+
+    my $newFormatTimestamp = $CLASS->reformatTimestamp( $timestamp );
+
+Takes a postgresql formatted timestamp (without time zone) and converts it to
+an aml time stamp by replacing the blank space between the date and time with
+a capital "T". Expects the incoming $timestamp to be formtted as
+C<qr/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\d{2}\.?\d*$/>
+
+=cut
+
+sub reformatTimestamp() {
+    my $class = shift;
+    my $pgdbTimestampNoTimeZone = shift;
+ 
+    if ($pgdbTimestampNoTimeZone !~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.?\d*$/ ) {
+        croak( "BadParameterException: Incorectly formatted time stamp: $pgdbTimestampNoTimeZone\n"
+             . ' expected 24 hour fromat like "YYYY-MM-DD HH:MM:SS.frac'
+              . " with optional part. No other spaces allowed.\n"
+        );
+    }
+
+    my $xmlFormatTimestamp = $pgdbTimestampNoTimeZone;
+    $xmlFormatTimestamp =~ s/ /T/;
+
+    return  $xmlFormatTimestamp;
+}
+
+=head2 getFileBaseName
+
+   my ($base, $ext) = $CLASS->getFileBaseName( "$filePath" );
+
+Given a $filePath, extracts the filename and returns the file base name $base
+and extension $ext. Everything up to the first "."  is returned as the $base,
+everything after as the $ext. $filePath may or may not include directories,
+relative or absolute, but the last element is assumed to be a filename (unless
+it ends with a directory marker, in which case it is treated the same as if
+$filePath was ""). If there is nothing before/after the ".", an empty string
+will be returned for the $base and/or $ext. If there is no ., $ext will be
+undef. Directory markers are "/", ".", or ".." on Unix
+
+=head3 Examples:
+
+             $filePath       $base        $ext
+    ------------------  ----------  ----------
+       "base.ext"           "base"       "ext"
+       "base.ext.more"      "base"  "ext.more"
+            "baseOnly"  "baseOnly"       undef
+           ".hidden"            ""    "hidden"
+       "base."              "base"          ""
+           "."                  ""          ""
+                    ""          ""       undef
+                 undef      (dies)            
+    "path/to/base.ext"      "base"       "ext"
+   "/path/to/base.ext"      "base"       "ext"
+    "path/to/"              ""           undef
+    "path/to/."             ""           undef
+    "path/to/.."            ""           undef
+
+=cut
+
+sub getFileBaseName {
+
+    my $class = shift;
+    my $path = shift;
+
+    if (! defined $path) {
+        croak "BadParameterException: Undefined parmaeter, getFileBaseName().\n";
+    }
+
+    my ($vol, $dir, $file) = File::Spec->splitpath( $path );
+    if ($file eq "") { return ("", undef); }
+    $file =~ /^([^\.]*)(\.?)(.*)$/;
+    my ($base, $ext);
+    if ($2 eq '.') { ($base, $ext) = ("", ""); }
+    if ($1)        { $base = $1; }
+    if ($3)        { $ext  = $3; }
+    return ($base, $ext);
+}
+
 =head1 INSTANCE METHODS
 
 =cut
@@ -249,15 +487,24 @@ sub checkCompatibleHash {
     $obj->run()
 
 Implements the actions taken when run as an application. Currently only
-returns 1 if succeds, or dies with an error message.
+returns 1 if succeds, or prints error and returns 0 if something dies with
+an error message.
 
 =cut
 
 sub run {
     my $self = shift;
-    $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
+    eval {
+        $COMMAND_DISPATCH_HR->{$self->{'command'}}(($self));
+    };
+    if ($@) {
+        my $error = $@;
+        $self->sayError( $error );
+        return 0;
+    }
     return 1;
 }
+
 
 =head1 INTERNAL METHODS
 
@@ -279,8 +526,20 @@ Returns the fully initialized application object ready for running.
 sub init {
     my $self = shift;
 
-    $self->{'id'} = $CLASS->getUuid();
-    $self->{'dbh'} = undef; 
+    $self->{'id'}        = $CLASS->getUuid();
+    $self->{'dbh'}       = undef;
+
+    # Template files are tightly coupled, so provided with distro. Might want
+    # to have multiple versions, so are in subdirectory SRA_1-5.
+    $self->{'xmlSchema'} = 'SRA_1-5',
+    $self->{'templateBaseDir'}  = dist_dir('Bio-SeqWare-Uploads-CgHub-Bam'),
+
+    # Might want to make these options and pass in by config file.
+    $self->{'cghubSubmitExec'}  = '/usr/bin/cgsubmit',
+    $self->{'cghubUploadExec'}  = '/usr/bin/gtupload',
+    $self->{'cghubSubmitUrl'}   = 'https://cghub.ucsc.edu/',
+    $self->{'chghubSubmitCert'} = '/datastore/alldata/tcga/CGHUB/Key.20140221/cghub.key',
+
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
     my $configOptionsHR = $self->getConfigOptions( $configFile );
@@ -306,7 +565,7 @@ exits. Planned exists do this manually.
 
 sub DESTROY {
     my $self = shift;
-    if ($self->{'dbh'}->{'Active'}) {
+    if ($self->{'dbh'} && $self->{'dbh'}->{'Active'}) {
         unless ($self->{'dbh'}->{'AutoCommit'}) {
             $self->{'dbh'}->rollback();
         }
@@ -656,10 +915,11 @@ sub do_launch {
             $self->dbInsertUploadFile( $uploadHR );
         };
         if ($@) {
-            $self->setFail( $uploadHR, "launch", $@ );
+            my $error = $@;
+            $self->dbSetFail( $uploadHR, "launch", $@ );
         }
         else {
-            $self->setDone( $uploadHR, "launch" );
+            $self->dbSetDone( $uploadHR, "launch" );
         }
     }
     return 1;
@@ -674,6 +934,35 @@ Not intended to be called directly.
 
 sub do_meta_generate {
     my $self = shift;
+
+    my $uploadHR;
+    eval {
+        $uploadHR = $self->dbSetRunning( 'launch', 'meta-generate' );
+
+        if ($uploadHR)  {
+            my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
+            $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
+            $dataHR->{'linkName'} = $self->_metaGenerate_linkBam( $dataHR );
+            my $analysisXml   = File::Spec->catfile($dataHR->{'dataDir'}, 'analysis.xml'  );
+            my $runXml        = File::Spec->catfile($dataHR->{'dataDir'}, 'run.xml'        );
+            my $experimentXml = File::Spec->catfile($dataHR->{'dataDir'}, 'experiment.xml' );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $analysisXml   );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $runXml        );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $experimentXml );
+            $self->dbSetDone( $uploadHR, 'meta-generate');
+        }
+    };
+    if ($@) {
+        my $error = $@;
+
+        if ($uploadHR) {
+            $error = $self->dbSetFail( $uploadHR, 'meta-generate', $error);
+        }
+        else {
+            $error .= "\tAlso: upload data not available\n";
+        }
+        $self->dbDie($error);
+    }
     return 1;
 }
 
@@ -749,29 +1038,29 @@ sub do_status_local {
     return 1;
 }
 
-=head2 setDone
+=head2 dbSetDone
 
-    my $self->setDone( $hashRef, $step );
+    my $self->dbSetDone( $hashRef, $step );
 
-Simple a wrapper for setUploadStatus, returns the result of calling that with
+Simple a wrapper for dbSetUploadStatus, returns the result of calling that with
 the "upload_id" key from the provided $hashRef and a new status of
 "$step" . "_done"
 
 =cut
 
-sub setDone {
+sub dbSetDone {
     my $self = shift;
     my $uploadHR = shift;
     my $step = shift;
 
-    return $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_done");
+    return $self->dbSetUploadStatus( $uploadHR->{'upload_id'}, $step . "_done" );
 }
 
-=head2 setFail
+=head2 dbSetFail
 
-    my $self->setDone( $hashRef, $step, $error );
+    my $self->dbSetDone( $hashRef, $step, $error );
 
-A wrapper for setUploadStatus, Calls that with the "upload_id" key from the
+A wrapper for dbSetUploadStatus, Calls that with the "upload_id" key from the
 provided $hashRef and a new status of
 "$step" . "_fail_" . getErrorName( $error )
 
@@ -781,7 +1070,7 @@ error will be *prepended* to $error before returning, separated with the string
 
 =cut
 
-sub setFail {
+sub dbSetFail {
     my $self = shift;
     my $uploadHR = shift;
     my $step = shift;
@@ -790,26 +1079,78 @@ sub setFail {
     my $errorName = $CLASS->getErrorName($error);
 
     eval{
-        $self->setUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
+        $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_" . $errorName);
     };
-    my $alsoError = $@;
-    if ($alsoError) {
-        $error = $alsoError . "\tTried to fail run because of:\n$error";
+    if ($@) {
+        $error = $@ . "\tTried to fail run because of:\n$error";
     }
     return $error;
 }
 
+=head2 dbSetRunning
 
-=head2 setUploadStatus
+   my $uploadRec = dbSetRunning( $stepDone, $stepRunning )
 
-    my $self->setUploadStatus( $upload_id, $newStatus )
+Given the previous step and the next step, finds one record in the database
+in state <$stepDone>_done, sets its status to <$stepRunning>_running, and
+returns the equivqalent hash-ref. This is done in a transaction so it is safe
+to run these steps overlapping each other.
+
+=cut
+
+sub dbSetRunning {
+    my $self = shift;
+    my $stepDone = shift;
+    my $stepRunning = shift;
+
+
+    $stepDone = $stepDone . "_done";
+    $stepRunning = $stepRunning . "_running";
+    my $dbh = $self->getDbh();
+
+    my $selectRunSQL = "SELECT * FROM upload WHERE status = ?
+        ORDER BY upload_id DESC LIMIT 1";
+
+    my $selectRun = $dbh->prepare( $selectRunSQL );
+
+    my $uploadRecHR;
+
+    eval {
+        # Transaction to ensures 'find' and 'tag as found' occur in one step,
+        # allowing for parallel running.
+        $dbh->begin_work();
+        $dbh->do("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+        $selectRun->execute( $stepDone );
+        my $rowHR = $selectRun->fetchrow_hashref();
+        $selectRun->finish();
+        if (! exists $rowHR->{'upload_id'}) {
+
+            say('Nothing to do.');
+        }
+        else {
+            $self->dbSetUploadStatus( $rowHR->{ 'upload_id' }, $stepRunning );
+            $uploadRecHR = \%$rowHR;
+            $uploadRecHR->{'status'} = $stepRunning;
+        }
+        $dbh->commit();
+    };
+    my $error = $@;
+    if ($error) {
+        $self->dbDie("DbSetRunningException: Failed to select lane to run because of:\n$error\n");
+    }
+    return $uploadRecHR;
+}
+
+=head2 dbSetUploadStatus
+
+    my $self->dbSetUploadStatus( $upload_id, $newStatus )
 
 Changes the status of the specified upload record to the specified status.
 Either returns 1 for success or dies with error.
 
 =cut
 
-sub setUploadStatus {
+sub dbSetUploadStatus {
     my $self = shift;
     my $upload_id = shift;
     my $newStatus = shift;
@@ -817,18 +1158,18 @@ sub setUploadStatus {
     my $dbh = $self->getDbh();
     my $updateUploadRecSQL =
         "UPDATE upload SET status = ? WHERE upload_id = ?";
-
     eval {
         my $updateSTH = $dbh->prepare($updateUploadRecSQL);
         my $isOk = $updateSTH->execute( $newStatus, $upload_id );
         my $updateCount = $updateSTH->rows();
-        if ($updateCount != 1) {
-            die "Updated " . $updateSTH->rows() . " update records, expected 1.\n";
-        }
         $updateSTH->finish();
+        if ($updateCount != 1) {
+            #Not db die, that is caught on outer loop.
+            die( "Updated " . $updateCount . " update records, expected 1.\n");
+        }
     };
     if ($@) {
-         die "DbStatusUpdateException: Failed to change upload record $upload_id to $newStatus.\nCleanup likely needed. Error was:\n$@\n";
+        $self->dbDie( "DbStatusUpdateException: Failed to change upload record $upload_id to $newStatus.\nCleanup likely needed. Error was:\n$@\n");
     }
 
     return 1;
@@ -888,6 +1229,534 @@ sub _launch_prepareUploadInfo {
    return \%upload;
 }
 
+=head2 _makeFileFromTemplate
+
+  $obj->_makeFileFromTemplate( $dataHR, $outFile );
+  $obj->_makeFileFromTemplate( $dataHR, $outFile, $templateFile );
+
+Takes the $dataHR of template values and uses it to fill in the
+a template ($templateFile) and generate an output file ($outFile). Returns
+the path to the created $outFile file, or dies with error.
+When $templateFile are relative, default directories are
+used from the object.
+
+USES
+
+    'templateBaseDir' = Absolute basedir to use if $templateFile is relative.
+    'xmlSchema'       = Schema version, used as subdir under templateBaseDir
+                        if $templateFile is relative.
+
+=cut
+
+sub _metaGenerate_makeFileFromTemplate {
+
+    my $self   = shift;
+    my $dataHR = shift;
+    my $outFile = shift;
+    my $templateFile = shift;
+
+    $CLASS->ensureIsDefined($dataHR);
+    $CLASS->ensureIsDefined($outFile);
+
+    my $templateAbsFilePath = $templateFile;
+    if (! File::Spec->file_name_is_absolute( $templateFile )) {
+        $templateAbsFilePath = File::Spec->catfile(
+            $self->{'templateBaseDir' },
+            $self->{'xmlSchema' },
+            $templateFile
+        );
+        $self->sayVerbose( "Using default template file path: $templateAbsFilePath\n" );
+    }
+    $CLASS->ensureIsFile($templateAbsFilePath);
+
+    $self->sayDebug( "TEMPLATE: $templateAbsFilePath\n"
+            ."OUTFILE: $outFile\n"
+            ."DATA: \n",
+            $dataHR
+    );
+
+    # Stamp output file from merged dataHR and template file
+    eval {
+        my $templateManager = Template->new({ 'ABSOLUTE' => 1, });
+        my $ok = $templateManager->process( $templateAbsFilePath, $dataHR, $outFile  );
+        if (! $ok) {
+            die( $templateManager->error() . "\n");
+        }
+        $CLASS->ensureIsFile(
+            $outFile,
+            "Can't find the file I should have just created: $outFile\n"
+        );
+    };
+    if ($@) {
+        my $error = $@;
+        die ( "FileFromTemplateException: Failed creating file \"$outFile\" from template \"$templateAbsFilePath\". Error was:\n\t$error");
+    }
+
+    return $outFile;
+}
+
+=head2 _metaGenerate_getDataPreservation
+
+ my $preservation = $self->_metaGenerate_getDataPreservation( 'preservation );
+
+If preservation contains "FFPE" (case insensitively), return 'FFPE' else
+default to 'FROZEN';
+
+=cut
+
+sub _metaGenerate_getDataPreservation {
+    my $self = shift;
+    my $preservation = shift;
+
+    if (! defined $preservation ) {
+        $preservation = 'FROZEN';
+    }
+    elsif ($preservation =~ /FFPE/i) {
+        $preservation = "FFPE";
+    }
+    else {
+        $preservation = 'FROZEN';
+    }
+
+    return $preservation;
+
+}
+
+=head2 _metaGenerate_getDataLibraryPrep
+
+    my $libraryPrep = $self->_metaGenerate_getDataLibraryPrep( $library_prep );
+
+The library prep is either something containing the string TotalRNA, case
+insensitively, in which case it is returned as is, or it is set to
+Illumina TruSeq.
+
+=cut
+
+sub _metaGenerate_getDataLibraryPrep {
+    my $self = shift;
+    my $libraryPrep = shift;
+
+    if (! defined $libraryPrep) {
+        $libraryPrep = "Illumina TruSeq";
+    }
+    elsif ($libraryPrep !~ /TotalRNA/i) {
+        $libraryPrep = "Illumina TruSeq";
+    }
+
+    return $libraryPrep;
+}
+
+=head2 _metaGenerate_getData
+
+    $self->_metaGenerate_getData()
+
+=cut
+
+sub _metaGenerate_getData {
+    my $self = shift;
+    my $uploadHR = shift;
+
+    $CLASS->ensureHashHasValue($uploadHR, 'upload_id');
+    my $upload_id = $uploadHR->{'upload_id'};
+
+    my $dbh = $self->getDbh();
+
+    my $selectAllSQL =
+       "SELECT vf.tstmp             as file_timestamp,
+               vf.workflow_accession,
+               vf.file_sw_accession as file_accession,
+               vf.md5sum            as file_md5sum,
+               vf.file_path,
+               vf.workflow          as workflow_name,
+               vf.workflow_version,
+               vf.algorithm         as workflow_algorithm,
+               p.instrument_model,
+               l.sw_accession       as lane_accession,
+               e.sw_accession       as experiment_accession,
+               e.name               as library_prep,
+               e.description        as experiment_description,
+               e.experiment_id,
+               s.sw_accession       as sample_accession,
+               s.tcga_uuid,
+               s.preservation
+        FROM upload u, upload_file uf, vw_files vf, lane l, experiment e, sample s, platform p
+        WHERE u.upload_id = ?
+          AND u.upload_id = uf.upload_id
+          AND uf.file_id = vf.file_id
+          AND vf.lane_id = l.lane_id
+          AND s.sample_id = u.sample_id
+          AND e.experiment_id = s.experiment_id
+          AND e.platform_id = p.platform_id";
+
+
+    my $dataHR;
+    eval {
+        my $selectionSTH = $dbh->prepare( $selectAllSQL );
+        $selectionSTH->execute( $upload_id );
+        my $rowHR = $selectionSTH->fetchrow_hashref();
+        my $badHR = $selectionSTH->fetchrow_hashref();
+        if ($badHR) {
+            my $error = "Dulicate data record 1:\n\t" . Dumper($rowHR)
+            . "\nDulicate data record 2:\n\t" . Dumper($badHR);
+            die "DbDuplicateRecordException: Data record retrieved should be unique:\n\t$error";
+        }
+        $selectionSTH->finish();
+
+        # run.xml
+
+        my $runDataHR = {
+            'lane_accession'       => $rowHR->{'lane_accession'},
+            'experiment_accession' => $rowHR->{'experiment_accession'},
+            'sample_accession'     => $rowHR->{'sample_accession'},
+        };
+
+        # analysis.xml
+
+        my $uploadIdAlias =
+            "upload_" . $upload_id;
+
+        my $analysisDate =
+            $CLASS->reformatTimestamp( $rowHR->{'file_timestamp'} );
+
+        my $readGroup =
+            $self->_metaGenerate_getDataReadGroup( $rowHR->{'file_path'} );
+
+        my $fileNoExtension =
+            ($CLASS->getFileBaseName( $rowHR->{'file_path'} ))[0];
+
+        my $fileName =
+            (File::Spec->splitpath( $rowHR->{'file_path'} ))[2];
+
+        my $localFileLink =
+            "UNCID_"
+            . $rowHR->{'file_accession'} . '.'
+            . $rowHR->{'tcga_uuid'} . '.'
+            . $fileName;
+
+        my $analysisDataHR = {
+            'uploadIdAlias'      => $uploadIdAlias,
+            'analysisDate'       => $analysisDate,
+            'workflow_accession' => $rowHR->{'workflow_accession'},
+            'tcga_uuid'          => $rowHR->{'tcga_uuid'},
+            'lane_accession'     => $rowHR->{'lane_accession'},
+            'readGroup'          => $readGroup,
+            'fileNoExtension'    => $fileNoExtension,
+            'workflow_name'      => $rowHR->{'workflow_name'},
+            'workflow_version'   => $rowHR->{'workflow_version'},
+            'workflow_algorithm' => $rowHR->{'workflow_algorithm'},
+            'file_accession'     => $rowHR->{'file_accession'},
+            'file_md5sum'        => $rowHR->{'file_md5sum'},
+            'uncFileSampleName'  => $localFileLink,
+        };
+
+        # experiment.xml
+
+        my $libraryPrep =
+            $self->_metaGenerate_getDataLibraryPrep($rowHR->{'library_prep'});
+
+        my $readEnds =
+            $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} );
+        if ($readEnds != 2) {
+            die "BadReadEnds: Only paired end (2 reads) allowed, not $readEnds.\n";
+        }
+
+        my $baseCoord =
+            $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
+
+        my $preservation =
+            $self->_metaGenerate_getDataPreservation( $rowHR->{'preservation'} );
+
+        my $experimentDataHR = {
+            'experiment_accession'   => $rowHR->{'experiment_accession'},
+            'sample_accession'       => $rowHR->{'sample_accession'},
+            'experiment_description' => $rowHR->{'experiment_description'},
+            'tcga_uuid'              => $rowHR->{'tcga_uuid'},
+            'libraryPrep'            => $libraryPrep,
+            'LibraryLayout'          => "PAIRED",
+            'readEnds'               => $readEnds,
+            'baseCoord'              => $baseCoord,
+            'instrument_model'       => $rowHR->{'instrument_model'},
+            'preservation'           => $preservation,
+        };
+
+        # Merge data.
+
+        # Hard to test these, indicates this is probably multiple subroutines
+        # TODO: split.
+
+        my $bad = $CLASS->checkCompatibleHash($runDataHR, $experimentDataHR);
+        # uncoverable branch true
+        if ($bad) {
+            # uncoverable statement
+            die "BadDataException: run and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
+        }
+        $bad = $CLASS->checkCompatibleHash($runDataHR, $analysisDataHR);
+        # uncoverable branch true
+        if ($bad) {
+            # uncoverable statement
+            die "BadDataException: run and analysis data different. Error was:\n\t" . Dumper($bad) . "\n";
+        }
+        $bad = $CLASS->checkCompatibleHash($analysisDataHR, $experimentDataHR);
+        # uncoverable branch true
+        if ($bad) {
+            # uncoverable statement
+            die "BadDataException: analysis and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
+        }
+
+        my %data = (%$analysisDataHR, %$experimentDataHR, %$runDataHR);
+        $dataHR = \%data;
+
+        $bad = $CLASS->checkCompatibleHash($dataHR, $uploadHR);
+        if ($bad) {
+            die "BadDataException: template data and upload data different. Mismatch was:\n\t" . Dumper($bad) . "\n";
+        }
+
+        %data = (%$dataHR, %$uploadHR);
+        $dataHR = \%data;
+
+        # Validate
+        $self->sayDebug( "Template data is: ", $dataHR );
+
+        for my $key (sort keys %$dataHR) {
+            $CLASS->ensureHashHasValue($dataHR, $key);
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        $self->dbDie("MetaDataGenerateException: Failed collecting data for template use. Error was:\n\t$error");
+    }
+
+    return $dataHR;
+}
+
+=head2 _metaGenerate_getDataReadCount
+
+    $ends = $self->_metaGenerate_getDataReadCount( $eperiment.sw_accession );
+
+Returns 1 if single ended, 2 if paired-ended. Based on the number
+of application reads in the associated experiment_spot_design_read_spec.
+Dies if any other number found, or if any problem with db access.
+
+=cut
+
+sub _metaGenerate_getDataReadCount {
+
+    my $self         = shift;
+    my $experimentId = shift;
+
+    my $dbh = $self->getDbh();
+
+    my $readCountSQL = 
+        "SELECT count(*) as read_ends
+         FROM experiment_spot_design_read_spec AS rs,
+                        experiment_spot_design AS d,
+                                    experiment AS e
+         WHERE  e.experiment_id                 = ?
+           AND  e.experiment_spot_design_id     = d.experiment_spot_design_id
+           AND rs.experiment_spot_design_id     = d.experiment_spot_design_id
+           AND rs.read_class                    =  'Application Read'
+           AND rs.read_type                    !=  'BarCode'";
+
+    my $readEnds;
+    eval {
+        my $readCoundSTH = $dbh->prepare( $readCountSQL );
+        $readCoundSTH->execute( $experimentId );
+        my $rowHR = $readCoundSTH->fetchrow_hashref();
+        $readCoundSTH->finish();
+        $readEnds = $rowHR->{'read_ends'};
+        if (! defined $readEnds) {
+             die "DbLookupError: Nothing retrieved from database.\n";
+        }
+        unless ($readEnds == 1 || $readEnds == 2) {
+             die "DbDataError: Found $readEnds read ends, expected 1 or 2.\n";
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        $self->dbDie( "DbReadCountException: Failed to retrieve the number of reads. Error was:\n\t$@" );
+    }
+
+    return $readEnds;
+}
+
+=head2 _metaGenerate_getDataReadGroup
+
+    my $readGroup = $self->_metaGenerate_getDataReadGroup( $bamFile );
+
+Gets the read group from the bam file using samtools and some unix tools.
+
+=cut
+
+sub _metaGenerate_getDataReadGroup {
+    my $self = shift;
+    my $bamFile = shift;
+
+    my $read_group;
+    my $SAMTOOLS_EXEC = '/datastore/tier1data/nextgenseq/seqware-analysis/software/samtools/samtools';
+    eval {
+        $CLASS->ensureIsFile( $bamFile );
+
+
+        my $command = "$SAMTOOLS_EXEC view -H $bamFile";
+        $self->sayVerbose( "READ LENGTH COMMAND: \"$command\"" );
+        my $bamHeaderString = qx/$command/;
+        if ($?) {
+            die ("SamtoolsFailedException: Error getting read group. Exit error code: $?. Failure message was:\n$!"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        if (! $bamHeaderString) {
+            $self->{'error'} = "";
+            die( "SamtoolsExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        my @bamHeaders = split( "\n", $bamHeaderString );
+        my @readGroupLines = grep( /^\@RG/, @bamHeaders );
+        my  $readGroupCount = scalar @readGroupLines;
+        if ($readGroupCount != 1) {
+            die "ReadGroupNumberException: One and only one readgroup allowed. Found $readGroupCount lines:n\t" . Dumper(\@readGroupLines);
+        }
+        $readGroupLines[0] =~ /\tID:([^\t]+).*$/;
+        $read_group = $CLASS->ensureIsDefined($1);
+ 
+    };
+    if ($@) {
+        my $error = $@;
+        die ( "ReadGroupException: Can't determine read group because:\n\t$error" );
+    }
+    return $read_group;
+
+}
+
+=head2 _metaGenerate_getDataReadLength
+
+   $baseCountPerRead = _metaGenerate_getDataReadLength( $bam_file_path );
+
+Examines first 1000 lines of the bam file and returns the length of the
+longest read found.
+
+=cut
+
+sub _metaGenerate_getDataReadLength {
+
+    my $self = shift;
+    my $bamFile = shift;
+
+    my $SAMTOOLS_EXEC = '/datastore/tier1data/nextgenseq/seqware-analysis/software/samtools/samtools';
+    my $MIN_READ_LENGTH = 17;
+    my $readLength = 0;
+
+    eval {
+        $CLASS->ensureIsFile( $bamFile );
+
+        my $command = "$SAMTOOLS_EXEC view $bamFile | head -1000 | cut -f 10";
+        $self->sayVerbose( "READ LENGTH COMMAND: \"$command\"" );
+        my $readStr = qx/$command/;
+
+        if ($?) {
+            die ("SamtoolsFailedException: Error getting reads. Exit error code: $?. Failure message was:\n$!"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        if (! $readStr) {
+            $self->{'error'} = "";
+            die( "SamtoolsExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\n\tOriginal command was:\n$command\n" );
+        }
+        my @reads = split (/\n/, $readStr);
+        foreach my $read (@reads) {
+            my $length = length($read);
+            if ($length > $readLength) {
+                $readLength = $length;
+            }
+        }
+
+        if ( $readLength < $MIN_READ_LENGTH ) {
+            $self->{'error'} = "low-read-length";
+            die( "SamtoolsShortReadException: Max read length to short, was: $readLength.\n" );
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        die ( "ReadLengthException: Can't determine bam max read length because:\n\t$error" );
+    }
+
+    return $readLength;
+}
+
+=head2 _metaGenerate_makeDataDir
+
+    my $dataDir = $self->_metaGenerate_makeDataDir( $dataHR );
+
+Creates the target data directory which should just be
+catdir ($dataHR->{'metadata_dir'}, $dataHR->{'cghub_analysis_id'});
+The pre-existance of $dataHR->{'metadata_dir'} is
+checked. If succeeds, returns the name of the new dataDir, else dies
+with error.
+
+=cut
+
+sub _metaGenerate_makeDataDir {
+    my $self = shift;
+    my $dataHR = shift;
+
+    my $baseDir     = $CLASS->ensureHashHasValue( $dataHR, 'metadata_dir');
+    my $analysisId  = $CLASS->ensureHashHasValue( $dataHR, 'cghub_analysis_id');
+    $CLASS->ensureIsDir( $baseDir );
+
+    my $wantDir = File::Spec->catdir( $baseDir, $analysisId );
+
+    eval {
+        mkpath($wantDir, { mode => 0775 });
+    };
+
+    if ($@) {
+        my $error = $@;
+        die "CreateDirectoryException: Unable to create path \"$wantDir\". Error was:\n\t$error";
+    }
+    return $wantDir;
+}
+
+=head2 _metaGenerate_linkBam
+
+    my $bamLink = $self->_metaGenerate_linkBam( $dataHR );
+
+Creates a link to $dataHR->{'file_path'} in the $dataHR->{'dataDir'}.
+The file_path and the dataDir must exist. The link is named after the
+<filename> extracted from the file_path, The <file_accession>, and the
+<sample_tcga_uuid> as
+
+  UNCID_<file_accession>.<sample_tcga_uuid>.<filename.
+
+The link name only (no path) will be returned.
+
+=cut
+
+sub _metaGenerate_linkBam {
+    my $self = shift;
+    my $dataHR = shift;
+
+    my $targetFile       = $CLASS->ensureHashHasValue($dataHR, 'file_path'       );
+    my $linkDir          = $CLASS->ensureHashHasValue($dataHR, 'dataDir'         );
+    my $file_accession   = $CLASS->ensureHashHasValue($dataHR, 'file_accession'  );
+    my $sample_tcga_uuid = $CLASS->ensureHashHasValue($dataHR, 'sample_tcga_uuid');
+    $CLASS->ensureIsFile( $targetFile );
+    $CLASS->ensureIsDir(  $linkDir    );
+
+    my $fileName = (File::Spec->splitpath( $dataHR->{'file_path'} ))[2];
+    my $linkName =
+        "UNCID_" . $file_accession . '.' . $sample_tcga_uuid . '.' . $fileName;
+    my $link_path = File::Spec->catfile( $linkDir, $linkName );
+    eval {
+        symlink( $targetFile, $link_path);
+    };
+    if ($@) {
+        my $error = $@;
+        die "CreateLinkException: Could not create symlink:\n"
+        . "\tLink: \"$link_path\"\n"
+        . "\tPointing to: \"$targetFile\". Error was:\t\n$error\n";
+    }
+    return $linkName;
+}
+
 =head2 dbInsertUpload
 
     my $upload_id = $self->dbInsertUpload( $recordHR );
@@ -924,15 +1793,64 @@ sub dbInsertUpload {
         my $rowHR = $insertSTH->fetchrow_hashref();
         $insertSTH->finish();
         if (! $rowHR->{'upload_id'}) {
-            die "Id of the upload record inserted was not retrieved.\n";
+            $self->dbDie( "Id of the upload record inserted was not retrieved.\n" );
         }
         $upload_id = $rowHR->{'upload_id'};
     };
     if ($@) {
-         die "dbUploadInsertException: Insert of new upload record failed. Error was:\n$@\n";
+         my $error = $@;
+         $self->dbDie("dbUploadInsertException: Insert of new upload record failed. Error was:\n$error\n");
     }
 
     return $upload_id;
+}
+
+=head2 dbDie
+
+   $self->dbDie( $errorMessage );
+
+Call to die due to a database error. Wraps a call to die with code to clean up
+the database connection, rolling back any open transaction and closing and 
+destroying the current database connection object.
+
+It will check if a transaction was not finished and do a rollback, If that
+was tried and failed, the error message will be appended with:
+"Also:\n\tRollback failed because of:\n$rollbackError", where $rollbackError
+is the error caught during the attmptedrollback.
+
+All errors during disconnect are ignored.
+
+If the error thrown by dbDie is caught and handled, a new call to getDbh
+will be needed as the old connection is no more.
+
+=cut
+
+sub dbDie {
+
+    my $self = shift;
+    my $error = shift;
+
+    $CLASS->ensureIsObject( $self, $CLASS );
+
+    if ($self->{'dbh'}) {
+        if ($self->{'dbh'}->{'Active'}) {
+             unless ($self->{'dbh'}->{'AutoCommit'}) {
+                 eval {
+                     $self->{'dbh'}->rollback();
+                     if ($self->{'verbose'}) {
+                         $error .= "\n\tRollback was performed.\n";
+                     }
+                 };
+                 if ($@) {
+                     $error .= "\n\tAlso: DbRollbackException: Rollback failed because of:\n$@";
+                 }
+             }
+        }
+        eval { $self->{'dbh'}->disconnect(); };
+        # Ignore disconnect errors!
+        $self->{'dbh'} = undef;
+    }
+    die $error;
 }
 
 =head2 dbInsertUploadFile
@@ -968,12 +1886,12 @@ sub dbInsertUploadFile {
         my $rowHR = $insertSTH->fetchrow_hashref();
         $insertSTH->finish();
         if (! $rowHR->{'file_id'}) {
-            die "Id of the file record linked to was not retrieved.\n";
+            $self->dbDie( "Id of the file record linked to was not retrieved.\n");
         }
         $file_id = $rowHR->{'file_id'};
     };
     if ($@) {
-         die "DbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n";
+         $self->dbDie( "DbUploadFileInsertException: Insert of new upload_file record failed. Error was:\n$@\n");
     }
 
     return $file_id;
@@ -995,6 +1913,7 @@ sub getDbh {
     if ($self->{'dbh'}) {
         return $self->{'dbh'};
     }
+
     my $dbh;
     my $connectionBuilder = Bio::SeqWare::Db::Connection->new( $self );
     $dbh = $connectionBuilder->getConnection(
@@ -1062,19 +1981,19 @@ sub dbGetBamFileInfo {
     $bamSelectSTH->execute( @bamSelectWhereParams );
     my $rowHR = $bamSelectSTH->fetchrow_hashref();
     my $twoFound = $bamSelectSTH->fetchrow_hashref();
-    if ($twoFound) {
-        die "DbDuplicateException: More than one record returned\n"
-        . "Query: \"$bamSelectSQL\"\n"
-        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n";
-    }
     $bamSelectSTH->finish();
+    if ($twoFound) {
+        $self->dbDie( "DbDuplicateException: More than one record returned\n"
+        . "Query: \"$bamSelectSQL\"\n"
+        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n");
+    }
 
     my $badKeys = $CLASS->checkCompatibleHash( $recHR, $rowHR);
     if ($badKeys) {
-        die "DbMismatchException: Queried (1) and returned (2) hashes differ unexpectedly:\n"
+        $self->dbDie( "DbMismatchException: Queried (1) and returned (2) hashes differ unexpectedly:\n"
         . Dumper($badKeys) . "\n"
         . "Query: \"$bamSelectSQL\"\n"
-        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n";
+        . "Parameters: " . Dumper(\@bamSelectWhereParams) . "\n");
     }
 
     return $rowHR
@@ -1121,17 +2040,10 @@ reporting is specified by option.)
 
 sub getLogPrefix {
     my $self = shift;
-
+    my $level = shift;
     my $host = hostname();
     my $timestamp = $CLASS->getTimestamp();
     my $id = $self->{'id'};
-    my $level = 'INFO';
-    if ($self->{'verbose'}) {
-        $level = 'VERBOSE';
-    }
-    if ($self->{'debug'}) {
-        $level = 'DEBUG';
-    }
     return "$host $timestamp $id [$level]";
 }
 
@@ -1149,13 +2061,17 @@ moved over by the length of the prefix (+ a space.)
 
 sub logifyMessage {
     my $self = shift;
+    my $level = shift;
     my $message = shift;
 
     chomp $message;
     my @lines = split( "\n", $message, 0);
-    my $prefix = $self->getLogPrefix() . " ";
-    $message = $prefix . join( "\n$prefix", @lines);
-    return $message . "\n";
+    my $prefix = $self->getLogPrefix( $level ). " " ;
+    my $newMessage;
+    for my $line (@lines) {
+        $newMessage .= $prefix . $line . "\n";
+    }
+    return $newMessage;
 }
 
 =head2 sayDebug
@@ -1188,12 +2104,15 @@ sub sayDebug {
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
         $message = $message . "\n" . Dumper($object);
     }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
     elsif (defined $object) {
         $message = $message . "\n" . $object;
     }
 
     if ( $self->{'log'} ) {
-        $message = $self->logifyMessage($message);
+        $message = $self->logifyMessage('DEBUG', $message);
     }
     print $message;
 }
@@ -1230,12 +2149,15 @@ sub sayVerbose {
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
         $message = $message . "\n" . Dumper($object);
     }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
     elsif (defined $object) {
         $message = $message . "\n"  . $object;
     }
 
     if ( $self->{'log'} ) {
-        $message = $self->logifyMessage($message);
+        $message = $self->logifyMessage('VERBOSE', $message);
     }
     print $message;
 }
@@ -1267,14 +2189,61 @@ sub say {
     if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
         $message = $message . "\n" . Dumper($object);
     }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
     elsif (defined $object) {
         $message = $message . "\n"  . $object;
     }
 
     if ( $self->{'log'} ) {
-        $message = $self->logifyMessage($message);
+        $message = $self->logifyMessage('INFO', $message);
     }
     print $message;
+}
+
+=head2 sayError
+
+   $self->sayError("Error message to print");
+   $self->sayError("Something", $object);
+
+Output text like print, but takes object option like sayVerbose and
+sayDebug.
+
+If the --log option is set, adds a prefix to each line of a message
+using logifyMessage.
+
+If an object parameter is passed, it will be printed on the following line.
+Normal stringification is performed, so $object can be anything, including
+another string, but if it is a hash-ref or an array ref, it will be formated
+with Data::Dumper before printing.
+
+See also sayVerbose, sayDebug.
+
+=cut
+
+sub sayError {
+    my $self = shift;
+    my $message = shift;
+    my $object = shift;
+    if (ref $object eq 'HASH' or ref $object eq 'ARRAY') {
+        $message = $message . "\n" . Dumper($object);
+    }
+    elsif (blessed($object)) {
+        $message .= "\n" . blessed($object) . " - " . $object;
+    }
+    elsif (defined $object) {
+        $message = $message . "\n" . $object;
+    }
+
+    if ( $self->{'log'} ) {
+        $message = $self->logifyMessage('ERROR', $message);
+        print $message;
+        return 1;
+    }
+    else {
+        die $message;
+    }
 }
 
 =head1 AUTHOR
@@ -1337,7 +2306,6 @@ Note: you must have a GitHub account to submit issues. Basic accounts are free.
 This module was developed for use with L<SeqWare | http://seqware.github.io>.
 
 =cut
-
 
 =head1 LICENSE AND COPYRIGHT
 

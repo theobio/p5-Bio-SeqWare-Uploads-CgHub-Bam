@@ -17,11 +17,12 @@ WriteMakefile
                  },
   'INSTALLDIRS' => 'site',
   'EXE_FILES' => [
+                   'bin/generate_cghub_metadata.pl',
                    'bin/upload-cghub-bam'
                  ],
   'PL_FILES' => {},
   'test' => {
-              'TESTS' => 't/*.t t/Commands/*.t t/Data/*.t'
+              'TESTS' => 't/*.t t/Commands/*.t t/Data/*.t t/Data/Xml/*.t'
             }
 )
 ;

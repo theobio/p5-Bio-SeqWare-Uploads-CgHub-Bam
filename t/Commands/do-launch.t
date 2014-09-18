@@ -9,6 +9,7 @@ use DBD::Mock;                   # Fake database results
 use Test::MockModule;
 use File::Spec;              # Generic file handling.
 use Data::Dumper;
+use Test::MockObject::Extends;
 
 # This class tests ...
 use Bio::SeqWare::Uploads::CgHub::Bam;
@@ -365,31 +366,55 @@ sub test_do_launch {
             ok( $obj->do_launch(), $message );
         }
     }
+
+    # Fail to load a sample, but continue with rest.
     {
-        my $dbEvent_InsertUploadFileFail_Line1 = {
+        # my bad event, Inserts 0 rows
+        my $badEvent_InsertUploadFileFail_Line1 = {
             'statement'    => qr/INSERT INTO upload_file.*/msi,
             'bound_params' => [ 121, 5 ],
             'results'  => [],
         };
-        my $dbEvent_UpdateUploadFail_line1 = {
-            'statement'   => qr/UPDATE upload SET status = .*/msi,
-            'bound_params' => [ 'launch_failed_DbStatusUpdateException', 121 ],
-            'results'  => [ [ 'rows' ], [] ],
-        };
-
-        my @dbLaunchFailEvent = (
-            $dbEvent_dbGetBamFileInfo_Line1, $dbEvent_InsertUpload_Line1,
-            $dbEvent_InsertUploadFileFail_Line1,
+        # The bad session
+        my @dbLaunchFailEvents = (
+            $dbEvent_dbGetBamFileInfo_Line1,
+            $dbEvent_InsertUpload_Line1,
+            $badEvent_InsertUploadFileFail_Line1,
+        );
+        # The next session, as a new dbh will be required (old one killed
+        # on error).
+        my @dbLaunchContinueEvents = (
             $dbEvent_dbGetBamFileInfo_Line2, $dbEvent_InsertUpload_Line2, $dbEvent_InsertUploadFile_Line2, $dbEvent_UpdateUpload_line2,
             $dbEvent_dbGetBamFileInfo_Line3, $dbEvent_InsertUpload_Line3, $dbEvent_InsertUploadFile_Line3, $dbEvent_UpdateUpload_line3,
             $dbEvent_dbGetBamFileInfo_Line4, $dbEvent_InsertUpload_Line4, $dbEvent_InsertUploadFile_Line4, $dbEvent_UpdateUpload_line4
-            
         );
+
         my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
-        $module->mock('getUuid', sub { '00000000-0000-0000-0000-000000000000'; } );
+
+        # Make testing easier by ensuring UUID value used for new uploads.
+        $module->mock( 'getUuid', sub { '00000000-0000-0000-0000-000000000000'; } );
+
+        # Allow mock of the dbh to survive death and reserection of dbh that is
+        # caused by the failure tested above. This is the second mock dbh
+        $module->mock(
+            'dbSetFail',
+            sub {
+                my $self = shift;
+                $self->{'dbh'} = makeMockDbh();
+                $self->{'dbh'}
+                ->{'mock_session'} = DBD::Mock::Session->new(
+                    'do_launchContinue', @dbLaunchContinueEvents
+                );
+            }
+        );
+
         my $obj = makeBamForlaunch();
+
+        # Mock dbh up to fail. This is the first dbh. Failure will be caught
+        # and instead of the normal "renew the db" behavior, the above will
+        # inject the mock dbh
         $obj->{'dbh'}->{'mock_session'} =
-            DBD::Mock::Session->new( 'do_launchFail', @dbLaunchFailEvent );
+            DBD::Mock::Session->new( 'do_launchFail', @dbLaunchFailEvents );
         {
             my $message = "do_launch with fail triggering update to launch_failed";
             ok( $obj->do_launch(), $message );
@@ -422,6 +447,6 @@ sub makeMockDbh {
         '',
         { 'RaiseError' => 1, 'PrintError' => 0, 'AutoCommit' => 1, 'ShowErrorStatement' => 1 },
     );
-    
+
     return $mockDbh;
 }
