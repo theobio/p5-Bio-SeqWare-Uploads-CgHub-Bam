@@ -303,6 +303,52 @@ sub ensureIsDir {
     return $dirname;
 }
 
+=head2 ensureIsObject
+
+    my $object = ensureIsObject( $object, [$wantClass], [$error] );
+
+Returns the specified object if it is an object, or throws an error. If
+$wantClass is specified, then it is an error if $object is not of class
+$wantClass. Inheritance is ignored.
+
+If an error is thrown, either dies with $error, if specified, or dies with one
+of the following messages:
+
+ "ValueNotDefinedException: Expected a defined value.\n";
+ "ValueNotObjectException: Not an object.\n";
+ "ValueNotExpectedClass: Wanted object of class $wantClass, "
+     . "was $objectClass.\n";
+ 
+=cut
+
+sub ensureIsObject {
+    my $class = shift;
+    my $object = shift;
+    my $wantClass = shift;
+    my $error = shift;
+
+    if (! defined $object) {
+        if (! defined $error) {
+            $error = "ValueNotDefinedException: Expected a defined value.\n";
+        }
+        die $error;
+    }
+    my $objectClass = blessed $object;
+    if (! defined $objectClass) {
+        if (! defined $error) {
+            $error = "ValueNotObjectException: Not an object.\n";
+        }
+        die $error;
+    }
+    if (defined $wantClass && $objectClass ne $wantClass) {
+        if (! defined $error) {
+            $error = "ValueNotExpectedClass: Wanted object of class $wantClass, was $objectClass.\n";
+        }
+        die $error;
+    }
+    return $object;
+}
+
 =head2 checkCompatibleHash
 
     my $badValuesHR = checkCompatibleHash( oneHR, twoHR );
@@ -888,30 +934,34 @@ Not intended to be called directly.
 
 sub do_meta_generate {
     my $self = shift;
+
     my $uploadHR;
     eval {
-        my $uploadHR = $self->dbSetRunning( 'launch', 'meta_generate' );
+        $uploadHR = $self->dbSetRunning( 'launch', 'meta-generate' );
 
         if ($uploadHR)  {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
             $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
             $dataHR->{'linkName'} = $self->_metaGenerate_linkBam( $dataHR );
-            my $analysisXml   = File::Spec->catFile($dataHR->{'dataDir'}, 'analysis.xml'  );
-            my $runXml        = File::Spec->catFile($dataHR->{'dataDir'}, 'run.xml'        );
-            my $experimentXml = File::Spec->catFile($dataHR->{'dataDir'}, 'experiment.xml' );
+            my $analysisXml   = File::Spec->catfile($dataHR->{'dataDir'}, 'analysis.xml'  );
+            my $runXml        = File::Spec->catfile($dataHR->{'dataDir'}, 'run.xml'        );
+            my $experimentXml = File::Spec->catfile($dataHR->{'dataDir'}, 'experiment.xml' );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, $analysisXml   );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, $runXml        );
             $self->_metaGenerate_makeFileFromTemplate( $dataHR, $experimentXml );
-
-            $self->dbSetDone( $uploadHR->{'upload_id'}, 'meta');
+            $self->dbSetDone( $uploadHR, 'meta-generate');
         }
     };
     if ($@) {
         my $error = $@;
+
         if ($uploadHR) {
-            $error = $self->dbSetFail( $uploadHR, 'meta_generate', $error);
+            $error = $self->dbSetFail( $uploadHR, 'meta-generate', $error);
         }
-        dbDie($error);
+        else {
+            $error .= "\tAlso: upload data not available\n";
+        }
+        $self->dbDie($error);
     }
     return 1;
 }
@@ -1003,7 +1053,7 @@ sub dbSetDone {
     my $uploadHR = shift;
     my $step = shift;
 
-    return $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_done");
+    return $self->dbSetUploadStatus( $uploadHR->{'upload_id'}, $step . "_done" );
 }
 
 =head2 dbSetFail
@@ -1029,11 +1079,10 @@ sub dbSetFail {
     my $errorName = $CLASS->getErrorName($error);
 
     eval{
-        $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_$errorName");
+        $self->dbSetUploadStatus($uploadHR->{'upload_id'}, $step . "_failed_" . $errorName);
     };
     if ($@) {
-        my $alsoError = $@;
-        $error = $alsoError . "\tTried to fail run because of:\n$error";
+        $error = $@ . "\tTried to fail run because of:\n$error";
     }
     return $error;
 }
@@ -1109,7 +1158,6 @@ sub dbSetUploadStatus {
     my $dbh = $self->getDbh();
     my $updateUploadRecSQL =
         "UPDATE upload SET status = ? WHERE upload_id = ?";
-
     eval {
         my $updateSTH = $dbh->prepare($updateUploadRecSQL);
         my $isOk = $updateSTH->execute( $newStatus, $upload_id );
@@ -1188,17 +1236,15 @@ sub _launch_prepareUploadInfo {
 
 Takes the $dataHR of template values and uses it to fill in the
 a template ($templateFile) and generate an output file ($outFile). Returns
-the absolute path to the created $outFile file, or dies with error.
-When $outFile and/or $templateFile are relative, default directories are
-used from the object. The $templateFile is optional, if not given, uses
-$outFile.template as the template name.
+the path to the created $outFile file, or dies with error.
+When $templateFile are relative, default directories are
+used from the object.
 
 USES
 
     'templateBaseDir' = Absolute basedir to use if $templateFile is relative.
     'xmlSchema'       = Schema version, used as subdir under templateBaseDir
                         if $templateFile is relative.
-    '_fastqUploadDir' = Absolute basedir to use if $outFile is relative.
 
 =cut
 
@@ -1210,17 +1256,8 @@ sub _metaGenerate_makeFileFromTemplate {
     my $templateFile = shift;
 
     $CLASS->ensureIsDefined($dataHR);
-
     $CLASS->ensureIsDefined($outFile);
-    my $outAbsFilePath = $outFile;
-    if (! File::Spec->file_name_is_absolute( $outFile )) {
-        $outAbsFilePath = File::Spec->catfile( $self->{'_fastqUploadDir'}, $outFile );
-    }
 
-    unless (defined $templateFile) {
-        $templateFile = $outFile . ".template";
-        $self->sayVerbose( "Using default template file name: $templateFile\n" );
-    }
     my $templateAbsFilePath = $templateFile;
     if (! File::Spec->file_name_is_absolute( $templateFile )) {
         $templateAbsFilePath = File::Spec->catfile(
@@ -1228,11 +1265,12 @@ sub _metaGenerate_makeFileFromTemplate {
             $self->{'xmlSchema' },
             $templateFile
         );
+        $self->sayVerbose( "Using default template file path: $templateAbsFilePath\n" );
     }
     $CLASS->ensureIsFile($templateAbsFilePath);
 
     $self->sayDebug( "TEMPLATE: $templateAbsFilePath\n"
-            ."OUTFILE: $outAbsFilePath\n"
+            ."OUTFILE: $outFile\n"
             ."DATA: \n",
             $dataHR
     );
@@ -1240,21 +1278,72 @@ sub _metaGenerate_makeFileFromTemplate {
     # Stamp output file from merged dataHR and template file
     eval {
         my $templateManager = Template->new({ 'ABSOLUTE' => 1, });
-        my $ok = $templateManager->process( $templateAbsFilePath, $dataHR, $outAbsFilePath  );
+        my $ok = $templateManager->process( $templateAbsFilePath, $dataHR, $outFile  );
         if (! $ok) {
             die( $templateManager->error() . "\n");
         }
         $CLASS->ensureIsFile(
-            $outAbsFilePath,
-            "Can't find the file I should have just created: $outAbsFilePath\n"
+            $outFile,
+            "Can't find the file I should have just created: $outFile\n"
         );
     };
     if ($@) {
         my $error = $@;
-        die ( "FileFromTemplateException: Failed creating file \"$outAbsFilePath\" from template \"$templateAbsFilePath\". Error was:\n\t$error");
+        die ( "FileFromTemplateException: Failed creating file \"$outFile\" from template \"$templateAbsFilePath\". Error was:\n\t$error");
     }
 
-    return $outAbsFilePath;
+    return $outFile;
+}
+
+=head2 _metaGenerate_getDataPreservation
+
+ my $preservation = $self->_metaGenerate_getDataPreservation( 'preservation );
+
+If preservation contains "FFPE" (case insensitively), return 'FFPE' else
+default to 'FROZEN';
+
+=cut
+
+sub _metaGenerate_getDataPreservation {
+    my $self = shift;
+    my $preservation = shift;
+
+    if (! defined $preservation ) {
+        $preservation = 'FROZEN';
+    }
+    elsif ($preservation =~ /FFPE/i) {
+        $preservation = "FFPE";
+    }
+    else {
+        $preservation = 'FROZEN';
+    }
+
+    return $preservation;
+
+}
+
+=head2 _metaGenerate_getDataLibraryPrep
+
+    my $libraryPrep = $self->_metaGenerate_getDataLibraryPrep( $library_prep );
+
+The library prep is either something containing the string TotalRNA, case
+insensitively, in which case it is returned as is, or it is set to
+Illumina TruSeq.
+
+=cut
+
+sub _metaGenerate_getDataLibraryPrep {
+    my $self = shift;
+    my $libraryPrep = shift;
+
+    if (! defined $libraryPrep) {
+        $libraryPrep = "Illumina TruSeq";
+    }
+    elsif ($libraryPrep !~ /TotalRNA/i) {
+        $libraryPrep = "Illumina TruSeq";
+    }
+
+    return $libraryPrep;
 }
 
 =head2 _metaGenerate_getData
@@ -1266,6 +1355,7 @@ sub _metaGenerate_makeFileFromTemplate {
 sub _metaGenerate_getData {
     my $self = shift;
     my $uploadHR = shift;
+
     $CLASS->ensureHashHasValue($uploadHR, 'upload_id');
     my $upload_id = $uploadHR->{'upload_id'};
 
@@ -1306,9 +1396,9 @@ sub _metaGenerate_getData {
         my $rowHR = $selectionSTH->fetchrow_hashref();
         my $badHR = $selectionSTH->fetchrow_hashref();
         if ($badHR) {
-            say("Dulicate data record 1: ", $rowHR);
-            say("Dulicate data record 2: ", $badHR);
-            die "DbDuplicateRecordException: Data record retrieved should be unique.\n";
+            my $error = "Dulicate data record 1:\n\t" . Dumper($rowHR)
+            . "\nDulicate data record 2:\n\t" . Dumper($badHR);
+            die "DbDuplicateRecordException: Data record retrieved should be unique:\n\t$error";
         }
         $selectionSTH->finish();
 
@@ -1362,28 +1452,19 @@ sub _metaGenerate_getData {
         # experiment.xml
 
         my $libraryPrep =
-            $rowHR->{'library_prep'};
-        if (! defined $libraryPrep || $libraryPrep !~ /TotalRNA/i) {
-            $libraryPrep = "Illumina TruSeq";
-        }
+            $self->_metaGenerate_getDataLibraryPrep($rowHR->{'library_prep'});
 
         my $readEnds =
             $self->_metaGenerate_getDataReadCount( $rowHR->{'experiment_id'} );
         if ($readEnds != 2) {
-            die "BadReadEnds: Only paired end (2 reads) allowed, not $readEnds.";
+            die "BadReadEnds: Only paired end (2 reads) allowed, not $readEnds.\n";
         }
 
         my $baseCoord =
             $self->_metaGenerate_getDataReadLength( $rowHR->{'file_path'} );
 
         my $preservation =
-            $rowHR->{'preservation'};
-        if (! defined $preservation || $preservation !~ /FFPE/i) {
-            $preservation = "FROZEN";
-        }
-        else {
-            $preservation = "FFPE";
-        }
+            $self->_metaGenerate_getDataPreservation( $rowHR->{'preservation'} );
 
         my $experimentDataHR = {
             'experiment_accession'   => $rowHR->{'experiment_accession'},
@@ -1398,18 +1479,27 @@ sub _metaGenerate_getData {
             'preservation'           => $preservation,
         };
 
-        # Merge data
+        # Merge data.
+
+        # Hard to test these, indicates this is probably multiple subroutines
+        # TODO: split.
 
         my $bad = $CLASS->checkCompatibleHash($runDataHR, $experimentDataHR);
+        # uncoverable branch true
         if ($bad) {
+            # uncoverable statement
             die "BadDataException: run and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
         $bad = $CLASS->checkCompatibleHash($runDataHR, $analysisDataHR);
+        # uncoverable branch true
         if ($bad) {
+            # uncoverable statement
             die "BadDataException: run and analysis data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
         $bad = $CLASS->checkCompatibleHash($analysisDataHR, $experimentDataHR);
+        # uncoverable branch true
         if ($bad) {
+            # uncoverable statement
             die "BadDataException: analysis and experiment data different. Error was:\n\t" . Dumper($bad) . "\n";
         }
 
@@ -1418,7 +1508,7 @@ sub _metaGenerate_getData {
 
         $bad = $CLASS->checkCompatibleHash($dataHR, $uploadHR);
         if ($bad) {
-            die "BadDataException: template data and upload data different. Error was:\n\t" . Dumper($bad) . "\n";
+            die "BadDataException: template data and upload data different. Mismatch was:\n\t" . Dumper($bad) . "\n";
         }
 
         %data = (%$dataHR, %$uploadHR);
@@ -1433,7 +1523,7 @@ sub _metaGenerate_getData {
     };
     if ($@) {
         my $error = $@;
-        $self->dbDie("MetaDataGenerateException: Failed collecting data for template use: $error");
+        $self->dbDie("MetaDataGenerateException: Failed collecting data for template use. Error was:\n\t$error");
     }
 
     return $dataHR;
@@ -1739,6 +1829,9 @@ sub dbDie {
 
     my $self = shift;
     my $error = shift;
+
+    $CLASS->ensureIsObject( $self, $CLASS );
+
     if ($self->{'dbh'}) {
         if ($self->{'dbh'}->{'Active'}) {
              unless ($self->{'dbh'}->{'AutoCommit'}) {

@@ -6,9 +6,10 @@ use warnings FATAL => 'all';
 use File::Spec;
 use File::Copy;
 use Data::Dumper;
+use Scalar::Util qw( blessed );  # Get class of objects
 
 use File::Temp;                      # Simple files for testing
-use Test::More 'tests' => 7;     # Main test module; run this many tests
+use Test::More 'tests' => 10;     # Main test module; run this many tests
 use Test::Exception;
 use Test::File::Contents;
 use Test::MockModule;
@@ -148,7 +149,10 @@ subtest( '_metaGenerate_getDataReadLength()' => \&test_getDataReadLength );
 subtest( '_metaGenerate_getDataReadCount()' => \&test_getDataReadCount );
 subtest( '_metaGenerate_getDataReadGroup()' => \&test_getDataReadGroup );
 subtest( '_metaGenerate_makeFileFromTemplate()' => \&test_makeFileFromTemplate );
+subtest( '_metaGenerate_getDataPreservation()' => \&test_getDataPreservation );
+subtest( '_metaGenerate_getDataLibraryPrep()' => \&test_getDataLibraryPrep );
 subtest( '_metaGenerate_getData()' => \&test_getData );
+subtest( 'do_meta_generate()' => \&test_do_meta_generate );
 
 sub test_makeDataDir {
      plan( tests => 5 );
@@ -578,10 +582,78 @@ sub test_getDataReadGroup {
 
 }
 
-sub test_getData {
-    plan( tests => 1 );
+sub test_getDataPreservation {
+    plan( tests => 4);
 
-    my @dbSession = ({
+    {
+        my $message = "Undefined is FROZEN";
+        my $want = "FROZEN";
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataPreservation();
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "Empty string is FROZEN";
+        my $want = "FROZEN";
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataPreservation( "" );
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "ffpe is FFPE";
+        my $want = "FFPE";
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataPreservation( "ffpe" );
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "anything_else is FROZEN";
+        my $want = "FROZEN";
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataPreservation( "Anything else?" );
+        is( $got, $want, $message);
+    }
+ 
+}
+
+sub test_getDataLibraryPrep {
+    plan( tests => 4);
+
+    {
+        my $message = "Undefined is 'Illumina TruSeq'";
+        my $want = 'Illumina TruSeq';
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataLibraryPrep();
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "Empty string is 'Illumina TruSeq'";
+        my $want = 'Illumina TruSeq';
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataLibraryPrep( "" );
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "'totalrna' is totalrna";
+        my $want = "totalrna";
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataLibraryPrep( 'totalrna' );
+        is( $got, $want, $message);
+    }
+    {
+        my $message = "anything_else is 'Illumina TruSeq'";
+        my $want = 'Illumina TruSeq';
+        my $obj = makeBamForMetaGenerate();
+        my $got = $obj->_metaGenerate_getDataLibraryPrep( "Anything else?" );
+        is( $got, $want, $message);
+    }
+ 
+}
+
+sub test_getData {
+    plan( tests => 4 );
+
+    my $goodSelectElement = {
         'statement'    => qr/SELECT.*/msi,
         'bound_params' => [ $DATA_HR->{'upload_id'} ],
         'results'  => [[
@@ -623,7 +695,70 @@ sub test_getData {
             '23b47813-7a77-44ca-b650-31a319c1f497',
             undef,
         ]]
-    });
+    };
+
+    my $badDupSelectElement = {
+        'statement'    => qr/SELECT.*/msi,
+        'bound_params' => [ $DATA_HR->{'upload_id'} ],
+        'results'  => [[
+            qw(
+                file_timestamp
+                workflow_accession
+                file_accession
+                file_md5sum
+                file_path
+                workflow_name
+                workflow_version
+                workflow_algorithm
+                instrument_model
+                lane_accession
+                experiment_accession
+                library_prep
+                experiment_description
+                experiment_id
+                sample_accession
+                tcga_uuid
+                preservation
+            )
+        ], [
+            '2014-05-19 15:47:52.663',
+            1015700,
+            2462755,
+            '04f5a22164bb399f61a2caee8ecb048b',
+            '/datastore/nextgenout4/seqware-analysis/illumina/140502_UNC12-SN629_0366_AC3UT1ACXX/seqware-0.7.0_Mapsplice-0.7.4/140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC/sorted_genome_alignments.bam',
+            'MapspliceRSEM',
+            '0.7.4',
+            'samtools-sort-genome',
+            'Illumina HiSeq 2000',
+            2449977,
+            975937,
+            'TCGA RNA-Seq Multiplexed Paired-End Experiment on HiSeq 2000',
+            'TCGA RNA-Seq Paired-End Experiment',
+            72,
+            2449976,
+            '23b47813-7a77-44ca-b650-31a319c1f497',
+            undef,
+        ], [
+            '2014-05-19 15:47:52.663',
+            1015700,
+            2462755,
+            '04f5a22164bb399f61a2caee8ecb048b',
+            '/datastore/nextgenout4/seqware-analysis/illumina/140502_UNC12-SN629_0366_AC3UT1ACXX/seqware-0.7.0_Mapsplice-0.7.4/140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC/sorted_genome_alignments.bam',
+            'MapspliceRSEM',
+            '0.7.4',
+            'samtools-sort-genome',
+            'Illumina HiSeq 2000',
+            2449977,
+            975937,
+            'TCGA RNA-Seq Multiplexed Paired-End Experiment on HiSeq 2000',
+            'TCGA RNA-Seq Paired-End Experiment',
+            72,
+            2449976,
+            '23b47813-7a77-44ca-b650-31a319c1f497',
+            undef,
+        ]]
+    };
+
 
     {
         my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
@@ -632,6 +767,7 @@ sub test_getData {
         $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
 
         my $obj = makeBamForMetaGenerate();
+        my @dbSession = ($goodSelectElement);
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'session'} = [
@@ -648,10 +784,78 @@ sub test_getData {
         $mock_readpipe->{'mock'} = 0;
     }
 
+    {
+        my $message = "Two is too many";
+        my @dbSession = ($badDupSelectElement);
+        my $obj = makeBamForMetaGenerate();
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Two is too many", @dbSession );
+        my $error1RES = "MetaDataGenerateException: Failed collecting data for template use\. Error was:";
+        my $error2RES = "DbDuplicateRecordException: Data record retrieved should be unique:";
+        my $error3RES = "Dulicate data record 1:";
+        my $error4RES = "Dulicate data record 2:";
+        my $errorRE = qr/^$error1RES\n\t$error2RES\n\t$error3RES\n\t.*\n$error4RES/ms;
+        throws_ok( sub {$obj->_metaGenerate_getData( $UPLOAD_HR );}, $errorRE, $message);
+    }
+
+    {
+        my $message = "One read count is bad.";
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('_metaGenerate_getDataReadGroup', sub { return '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC'; } );
+        $module->mock('_metaGenerate_getDataReadLength', sub { return '49' } );
+        $module->mock('_metaGenerate_getDataReadCount', sub { return '1' } );
+
+        my $obj = makeBamForMetaGenerate();
+        my @dbSession = ($goodSelectElement);
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'session'} = [
+            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+            { 'ret' => "$SAMTOOLD_VIEW_HEADERS", 'exit' => 0 },
+        ];
+
+        my $error1RES = "MetaDataGenerateException: Failed collecting data for template use. Error was:";
+        my $error2RES = 'BadReadEnds: Only paired end \(2 reads\) allowed, not 1\.';
+        my $errorRE = qr/^$error1RES\n\t$error2RES/ms;
+        throws_ok( sub {$obj->_metaGenerate_getData( $UPLOAD_HR );}, $errorRE, $message);
+        $mock_readpipe->{'session'} = undef;
+        $mock_readpipe->{'_idx'} = undef;
+        $mock_readpipe->{'mock'} = 0;
+    }
+
+    {
+        my $message = "Fails if uploadHR input data doesn't match retrieved data.";
+        my %upload = %$UPLOAD_HR;
+        # Set a value that will confilct with data. This could happen if upload
+        # table schema changes, or faulty programming was added to handle data
+        # processing and assignement.
+        $upload{'tcga_uuid'} = "Not the correct value";
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('_metaGenerate_getDataReadGroup', sub { return '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC'; } );
+        $module->mock('_metaGenerate_getDataReadLength', sub { return '49' } );
+        $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
+
+        my $obj = makeBamForMetaGenerate();
+        my @dbSession = ($goodSelectElement);
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'session'} = [
+            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+            { 'ret' => "$SAMTOOLD_VIEW_HEADERS", 'exit' => 0 },
+        ];
+
+        my $error1RES = "MetaDataGenerateException: Failed collecting data for template use. Error was:";
+        my $error2RES = 'BadDataException: template data and upload data different. Mismatch was:';
+        my $errorRE = qr/^$error1RES\n\t$error2RES/ms;
+        throws_ok( sub {$obj->_metaGenerate_getData( \%upload );}, $errorRE, $message);
+        $mock_readpipe->{'session'} = undef;
+        $mock_readpipe->{'_idx'} = undef;
+        $mock_readpipe->{'mock'} = 0;
+    }
+
 }
 
 sub test_makeFileFromTemplate {
-    plan( tests => 15);
+    plan( tests => 20);
 
     my $obj = makeBamForMetaGenerate();
     # run.xml
@@ -675,6 +879,32 @@ sub test_makeFileFromTemplate {
                 ok( (-f $runXml),   "Can find run.xml file");
                 files_eq_or_diff( $runXml, $sampleFileName, "run.xml file generated correctly." );
             }
+        }
+
+        # Relatve template path
+        {
+            my $runXml = $obj->_metaGenerate_makeFileFromTemplate( $RUN_HR, $outFileName, 'run.xml.template' );
+            {
+                is ( $runXml, $outFileName, "Appeared to create run.xml file");
+                ok( (-f $runXml),   "Can find run.xml file");
+                files_eq_or_diff( $runXml, $sampleFileName, "run.xml file generated correctly." );
+            }
+        }
+
+        # Error during processing.
+        {
+            my $message = "Error if fails during template processing";
+            my $errorRES1 = 'FileFromTemplateException: Failed creating file ".+run\.xml" from template ".+run\.xml\.template"\. Error was:\n\t';
+            my $errorRE = qr/^$errorRES1/;
+            throws_ok( sub { $obj->_metaGenerate_makeFileFromTemplate( "BAD", $outFileName, $templateFileName );}, $errorRE, $message);
+        }
+        {
+            my $message = "Error if template processing failw without error";
+            my $module = new Test::MockModule('Template');
+            $module->mock('process', sub { return; } );
+            my $errorRES1 = 'FileFromTemplateException: Failed creating file ".+run\.xml" from template ".+run\.xml\.template"\. Error was:\n\t';
+            my $errorRE = qr/^$errorRES1/;
+            throws_ok( sub { $obj->_metaGenerate_makeFileFromTemplate( "BAD", $outFileName, $templateFileName );}, $errorRE, $message);
         }
     }
 
@@ -725,6 +955,135 @@ sub test_makeFileFromTemplate {
             }
         }
     }
+}
+
+sub test_do_meta_generate {
+    plan( tests => 5);
+
+    {
+        # Mock EVERYTHING.
+        my %upload = %$UPLOAD_HR;
+        my %data = %$DATA_HR;
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        my $obj = makeBamForMetaGenerate();
+        $module->mock('dbSetRunning', sub { return \%upload; } );
+        $module->mock('_metaGenerate_getData', sub { return \%data; } );
+        $module->mock('_metaGenerate_makeDataDir', sub { return "/dev/null"; } );
+        $module->mock('_metaGenerate_linkBam', sub { return "not_a_File"; } );
+        $module->mock('_metaGenerate_makeFileFromTemplate', sub { 1 } );
+        $module->mock('dbSetDone', sub { 1 } );
+        {
+            my $message = "Returns 1 on success";
+            my $got = $obj->do_meta_generate();
+            my $want = 1;
+            is($got, $want, $message);
+        }
+    }
+
+    {
+        # Should only run very first step, then exit succesfully
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('dbSetRunning', sub { return; } );
+        $module->mock('_metaGenerate_getData', sub { die "NO RUN I" } );
+        my $obj = makeBamForMetaGenerate();
+        {
+            my $message = "Does not run anything if has no launch record.";
+            my $got = $obj->do_meta_generate();
+            my $want = 1;
+            is($got, $want, $message);
+        }
+    }
+
+    {
+        my %upload = %$UPLOAD_HR;
+        my %data = %$DATA_HR;
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('_metaGenerate_getData', sub { return \%data; } );
+        $module->mock('_metaGenerate_makeDataDir', sub { return "/dev/null"; } );
+        $module->mock('_metaGenerate_linkBam', sub { return "not_a_File"; } );
+        $module->mock('_metaGenerate_makeFileFromTemplate', sub { 1 } );
+        my $obj = makeBamForMetaGenerate();
+        # Mock everything except SetRunning and SetDone, Script DB for
+        # succesful run.
+        my @dbEvents_ok = (
+            dbMockStep_Begin(),
+            dbMockStep_SetTransactionLevel(),
+            {
+                'statement'   => qr/SELECT \* FROM upload WHERE status = /msi,
+                'bound_params' => [ 'launch_done' ],
+                'results'  => [
+                    ['upload_id', 'status', 'sample_id' ],
+                    [$upload{'upload_id'}, 'launch_done', $upload{'sample_id'}],
+                ],
+            },
+            {
+                'statement'   => qr/UPDATE upload SET status = .*/msi,
+                'bound_params' => [ 'meta-generate_running', $upload{'upload_id'} ],
+                'results'  => [ [ 'rows' ], [] ],
+            },
+            dbMockStep_Commit(),
+            {
+                'statement'   => qr/UPDATE upload SET status = .*/msi,
+                'bound_params' => [ 'meta-generate_done', $upload{'upload_id'} ],
+                'results'  => [ [ 'rows' ], [] ],
+            },
+        );
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setRunWithReturn', @dbEvents_ok );
+        {
+            my $message = "Sets done when completes normally.";
+            my $got = $obj->do_meta_generate();
+            my $want = 1;
+            is($got, $want, $message);
+        }
+    }
+
+    {
+        my %upload = %$UPLOAD_HR;
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('_metaGenerate_getData', sub { die "KaboomException: Bang.\n"; } );
+        my $obj = makeBamForMetaGenerate();
+        my @dbEvents_ok = (
+            dbMockStep_Begin(),
+            dbMockStep_SetTransactionLevel(),
+            {
+                'statement'   => qr/SELECT \* FROM upload WHERE status = /msi,
+                'bound_params' => [ 'launch_done' ],
+                'results'  => [
+                    ['upload_id', 'status', 'sample_id' ],
+                    [$upload{'upload_id'}, 'launch_done', $upload{'sample_id'}],
+                ],
+            },
+            {
+                'statement'   => qr/UPDATE upload SET status = .*/msi,
+                'bound_params' => [ 'meta-generate_running', $upload{'upload_id'} ],
+                'results'  => [ [ 'rows' ], [] ],
+            },
+            dbMockStep_Commit(),
+            {
+                'statement'   => qr/UPDATE upload SET status = .*/msi,
+                'bound_params' => [ 'meta-generate_failed_Kaboom', $upload{'upload_id'} ],
+                'results'  => [ [ 'rows' ], [] ],
+            },
+        );
+        $obj->{'dbh'}->{'mock_session'} =
+            DBD::Mock::Session->new( 'setRunWithReturn', @dbEvents_ok );
+        {
+            my $message = "Sets fail and dies if does not complete normally.";
+            my $errorRE = qr/^KaboomException: Bang\.\n$/;
+            throws_ok(sub {$obj->do_meta_generate();}, $errorRE, $message );
+        }
+    }
+    {
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('dbSetRunning', sub { die "KaboomException: Bang.\n"; } );
+        my $obj = makeBamForMetaGenerate();
+        {
+            my $message = "Sets fail and dies if does not complete normally.";
+            my $errorRE = qr/^KaboomException: Bang\.\n\tAlso: upload data not available\n/;
+            throws_ok(sub {$obj->do_meta_generate();}, $errorRE, $message );
+        }
+    }
 
 }
 
@@ -747,4 +1106,31 @@ sub makeMockDbh {
     );
 
     return $mockDbh;
+}
+sub dbMockStep_Begin {
+    return {
+        'statement' => 'BEGIN WORK',
+        'results'   => [ [] ],
+    };
+}
+
+sub dbMockStep_SetTransactionLevel {
+    return {
+        'statement' => 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+        'results'  => [ [] ],
+    };
+}
+
+sub dbMockStep_Commit {
+    return {
+        'statement' => 'COMMIT',
+        'results'   => [ [] ],
+    };
+}
+
+sub dbMockStep_Rollback {
+    return {
+        'statement' => 'ROLLBACK',
+        'results'   => [ [] ],
+    };
 }

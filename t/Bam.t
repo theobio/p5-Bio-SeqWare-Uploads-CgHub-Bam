@@ -4,7 +4,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 
 use Test::Output;                # Tests what appears on stdout.
-use Test::More 'tests' => 30;    # Main test module; run this many subtests
+use Test::More 'tests' => 31;    # Main test module; run this many subtests
 use Test::Exception;             # Test failures
 
 use Test::MockModule;            # Fake subroutine returns from other modules.
@@ -66,8 +66,8 @@ subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
 subtest( 'ensureHashHasValue()' => \&testEnsureHashHasValue );
 subtest( 'ensureIsFile()' => \&testEnsureIsFile );
 subtest( 'ensureIsDir()' => \&testEnsureIsDir );
+subtest( 'ensureIsbject()' => \&testEnsureIsObject );
 subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
-
 
 sub testNew {
     plan( tests => 2 );
@@ -1598,6 +1598,90 @@ sub testEnsureIsFile {
     }
 }
 
+sub testEnsureIsObject {
+    plan( tests => 14);
+
+    my $obj = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+    my $objectClass = 'Test::MockModule';
+    my $notObj = "A String is not an Object";
+    my $badObject = 'Not::My::Class';
+    my $testError = "FakeException: No so bad\n";
+    my $myErrorRE = qr/^$testError/m;
+    my $defaultUndefErrorRE = qr/^ValueNotDefinedException: Expected a defined value.\n/m;
+    my $defaultNotObjectErrorRE = qr/^ValueNotObjectException: Not an object.\n/m;
+    my $defaultWrongObjectErrorRE = qr/^ValueNotExpectedClass: Wanted object of class $badObject, was $objectClass.\n/m;
+
+    # If no class specified
+    {
+        {
+            my $message = "Returns object if file exists (with error)";
+            my $got = $CLASS->ensureIsObject( $obj, undef, $testError );
+            my $want = $obj;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns object if file exists (no error)";
+            my $got = $CLASS->ensureIsObject( $obj );
+            my $want = $obj;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Throws specified error if undefined";
+            throws_ok( sub { $CLASS->ensureIsObject( undef, undef, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if undefined";
+            throws_ok( sub { $CLASS->ensureIsObject( undef ) }, $defaultUndefErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if not object";
+            throws_ok( sub { $CLASS->ensureIsObject( $notObj, undef, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if not object";
+            throws_ok( sub { $CLASS->ensureIsObject( $notObj ) }, $defaultNotObjectErrorRE, $message);
+        }
+    }
+    # If class specified
+    {
+        {
+            my $message = "Returns object if file exists (with error)";
+            my $got = $CLASS->ensureIsObject( $obj, $objectClass, $testError );
+            my $want = $obj;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Returns object if file exists (no error)";
+            my $got = $CLASS->ensureIsObject( $obj, $objectClass );
+            my $want = $obj;
+            is( $got, $want, $message)
+        }
+        {
+            my $message = "Throws specified error if undefined";
+            throws_ok( sub { $CLASS->ensureIsObject( undef, $objectClass, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if undefined";
+            throws_ok( sub { $CLASS->ensureIsObject( undef, $objectClass ) }, $defaultUndefErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if not object";
+            throws_ok( sub { $CLASS->ensureIsObject( $notObj, $objectClass, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if not object";
+            throws_ok( sub { $CLASS->ensureIsObject( $notObj, $objectClass ) }, $defaultNotObjectErrorRE, $message);
+        }
+        {
+            my $message = "Throws specified error if wrong object class";
+            throws_ok( sub { $CLASS->ensureIsObject( $obj, $badObject, $testError ) }, $myErrorRE, $message);
+        }
+        {
+            my $message = "Throws default error if wrong object class";
+            throws_ok( sub { $CLASS->ensureIsObject( $obj, $badObject ) }, $defaultWrongObjectErrorRE, $message);
+        }
+    }}
+
 sub testEnsureIsntEmptyString {
     plan( tests => 8);
 
@@ -1826,7 +1910,7 @@ sub testLogifyMessage {
 }
 
 sub testDbDie {
-    plan( tests => 24 );
+    plan( tests => 25 );
 
     # Normal db object
     {
@@ -2014,6 +2098,12 @@ sub testDbDie {
             my $message = "dbh still exists";
             ok(exists $obj->{'dbh'}, $message);
         }
+    }
+
+    {
+        my $message = "Error if not calling dbDie as object method";
+        my $errorRE = qr/^ValueNotObjectException: Not an object./;
+        throws_ok( sub { $CLASS->dbDie(); }, $errorRE, $message );
     }
 
 }
