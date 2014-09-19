@@ -938,7 +938,7 @@ sub do_meta_generate {
     my $uploadHR;
     eval {
         $uploadHR = $self->dbSetRunning( 'launch', 'meta-generate' );
-        sayDebug( 'Running meta_generate on: ', $uploadHR );
+        $self->sayDebug( 'Running meta_generate on: ', $uploadHR );
         if ($uploadHR)  {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
             $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
