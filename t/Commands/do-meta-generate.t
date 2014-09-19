@@ -114,6 +114,8 @@ my $RUN_HR = {
     'sample_accession'     => 2449976,
 };
 
+# 'file_path' only needed indeirectly to create the link to the real file for
+# uploading.
 my $ANALYSIS_HR = {
     'uploadIdAlias'      => 'upload_23985',
     'analysisDate'       => '2014-05-19T15:47:52.663',
@@ -128,6 +130,7 @@ my $ANALYSIS_HR = {
     'file_accession'     => 2462755,
     'file_md5sum'        => '04f5a22164bb399f61a2caee8ecb048b',
     'uncFileSampleName'  => $LINK_NAME,
+    'file_path'          => '/datastore/nextgenout4/seqware-analysis/illumina/140502_UNC12-SN629_0366_AC3UT1ACXX/seqware-0.7.0_Mapsplice-0.7.4/140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC/sorted_genome_alignments.bam',
 };
 
 my $EXPERIMENT_HR = {
@@ -245,10 +248,10 @@ sub test_linkBam {
     {
         my $dataHR = {
             'file_path' => $FAKE_BAM_FILE, 'dataDir' => $TEMP_DIR,
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+            'file_accession' => 111111, 'tcga_uuid' => $CLASS->getUuid()
         };
         my $filename = 'fake.bam';
-        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
+        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'tcga_uuid'} . ".$filename";
         my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
         {
             ok(! -l $wantLinkPath, "Link doesn't pre-exist");
@@ -267,7 +270,7 @@ sub test_linkBam {
     {
         my $dataHR = {
             'file_path' => $CLASS->getUuid(), 'dataDir' => $TEMP_DIR,
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+            'file_accession' => 111111, 'tcga_uuid' => $CLASS->getUuid()
         };
         {
             my $message = 'Error if file linked to does not exist';
@@ -279,7 +282,7 @@ sub test_linkBam {
     {
         my $dataHR = {
             'file_path' => $FAKE_BAM_FILE, 'dataDir' => $CLASS->getUuid(),
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+            'file_accession' => 111111, 'tcga_uuid' => $CLASS->getUuid()
         };
         {
             my $message = 'Error if dir link put in does not exist';
@@ -291,10 +294,10 @@ sub test_linkBam {
     {
         my $dataHR = {
             'file_path' => $FAKE_BAM_FILE, 'dataDir' => File::Temp->newdir(),
-            'file_accession' => 111111, 'sample_tcga_uuid' => $CLASS->getUuid()
+            'file_accession' => 111111, 'tcga_uuid' => $CLASS->getUuid()
         };
         my $filename = 'fake.bam';
-        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'sample_tcga_uuid'} . ".$filename";
+        my $wantLinkName = 'UNCID_111111.' . $dataHR->{'tcga_uuid'} . ".$filename";
         my $wantLinkPath = File::Spec->catfile($dataHR->{'dataDir'}, $wantLinkName);
         {
             my $message = 'Error if creating link fails';

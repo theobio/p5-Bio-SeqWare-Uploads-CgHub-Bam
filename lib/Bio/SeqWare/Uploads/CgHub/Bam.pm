@@ -1447,6 +1447,7 @@ sub _metaGenerate_getData {
             'file_accession'     => $rowHR->{'file_accession'},
             'file_md5sum'        => $rowHR->{'file_md5sum'},
             'uncFileSampleName'  => $localFileLink,
+            'file_path'          => $rowHR->{'file_path'},
         };
 
         # experiment.xml
@@ -1739,13 +1740,13 @@ sub _metaGenerate_linkBam {
     my $targetFile       = $CLASS->ensureHashHasValue($dataHR, 'file_path'       );
     my $linkDir          = $CLASS->ensureHashHasValue($dataHR, 'dataDir'         );
     my $file_accession   = $CLASS->ensureHashHasValue($dataHR, 'file_accession'  );
-    my $sample_tcga_uuid = $CLASS->ensureHashHasValue($dataHR, 'sample_tcga_uuid');
+    my $tcga_uuid = $CLASS->ensureHashHasValue($dataHR, 'tcga_uuid');
     $CLASS->ensureIsFile( $targetFile );
     $CLASS->ensureIsDir(  $linkDir    );
 
     my $fileName = (File::Spec->splitpath( $dataHR->{'file_path'} ))[2];
     my $linkName =
-        "UNCID_" . $file_accession . '.' . $sample_tcga_uuid . '.' . $fileName;
+        "UNCID_" . $file_accession . '.' . $tcga_uuid . '.' . $fileName;
     my $link_path = File::Spec->catfile( $linkDir, $linkName );
     eval {
         symlink( $targetFile, $link_path);
