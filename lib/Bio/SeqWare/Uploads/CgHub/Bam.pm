@@ -943,12 +943,12 @@ sub do_meta_generate {
             my $dataHR = $self->_metaGenerate_getData( $uploadHR );
             $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
             $dataHR->{'linkName'} = $self->_metaGenerate_linkBam( $dataHR );
-            my $analysisXml   = File::Spec->catfile($dataHR->{'dataDir'}, 'analysis.xml', 'analysis.xml.template' );
-            my $runXml        = File::Spec->catfile($dataHR->{'dataDir'}, 'run.xml', 'run.xml.template' );
-            my $experimentXml = File::Spec->catfile($dataHR->{'dataDir'}, 'experiment.xml', 'experiment.xml.template');
-            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $analysisXml   );
-            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $runXml        );
-            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $experimentXml );
+            my $analysisXml   = File::Spec->catfile($dataHR->{'dataDir'}, 'analysis.xml'   );
+            my $runXml        = File::Spec->catfile($dataHR->{'dataDir'}, 'run.xml'        );
+            my $experimentXml = File::Spec->catfile($dataHR->{'dataDir'}, 'experiment.xml' );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $analysisXml,   'analysis.xml.template'   );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $runXml,        'run.xml.template'        );
+            $self->_metaGenerate_makeFileFromTemplate( $dataHR, $experimentXml, 'experiment.xml.template' );
             $self->dbSetDone( $uploadHR, 'meta-generate');
         }
     };
