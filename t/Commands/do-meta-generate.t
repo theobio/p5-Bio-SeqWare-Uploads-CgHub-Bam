@@ -146,6 +146,50 @@ my $EXPERIMENT_HR = {
 my %DATA = (%$UPLOAD_HR, %$RUN_HR, %$ANALYSIS_HR, %$EXPERIMENT_HR);
 my $DATA_HR = \%DATA;
 
+my $goodGetDataSelectElement = {
+    'statement'    => qr/SELECT.*/msi,
+    'bound_params' => [ $DATA_HR->{'upload_id'} ],
+    'results'  => [[
+        qw(
+            file_timestamp
+            workflow_accession
+            file_accession
+            file_md5sum
+            file_path
+            workflow_name
+            workflow_version
+            workflow_algorithm
+            instrument_model
+            lane_accession
+            experiment_accession
+            library_prep
+            experiment_description
+            experiment_id
+            sample_accession
+            tcga_uuid
+            preservation
+        )
+    ], [
+        '2014-05-19 15:47:52.663',
+        1015700,
+        2462755,
+        '04f5a22164bb399f61a2caee8ecb048b',
+        '/datastore/nextgenout4/seqware-analysis/illumina/140502_UNC12-SN629_0366_AC3UT1ACXX/seqware-0.7.0_Mapsplice-0.7.4/140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC/sorted_genome_alignments.bam',
+        'MapspliceRSEM',
+        '0.7.4',
+        'samtools-sort-genome',
+        'Illumina HiSeq 2000',
+        2449977,
+        975937,
+        'TCGA RNA-Seq Multiplexed Paired-End Experiment on HiSeq 2000',
+        'TCGA RNA-Seq Paired-End Experiment',
+        72,
+        2449976,
+        '23b47813-7a77-44ca-b650-31a319c1f497',
+        undef,
+    ]]
+};
+
 subtest( '_metaGenerate_linkBam()' => \&test_linkBam );
 subtest( '_metaGenerate_makeDataDir()' => \&test_makeDataDir );
 subtest( '_metaGenerate_getDataReadLength()' => \&test_getDataReadLength );
@@ -656,50 +700,6 @@ sub test_getDataLibraryPrep {
 sub test_getData {
     plan( tests => 4 );
 
-    my $goodSelectElement = {
-        'statement'    => qr/SELECT.*/msi,
-        'bound_params' => [ $DATA_HR->{'upload_id'} ],
-        'results'  => [[
-            qw(
-                file_timestamp
-                workflow_accession
-                file_accession
-                file_md5sum
-                file_path
-                workflow_name
-                workflow_version
-                workflow_algorithm
-                instrument_model
-                lane_accession
-                experiment_accession
-                library_prep
-                experiment_description
-                experiment_id
-                sample_accession
-                tcga_uuid
-                preservation
-            )
-        ], [
-            '2014-05-19 15:47:52.663',
-            1015700,
-            2462755,
-            '04f5a22164bb399f61a2caee8ecb048b',
-            '/datastore/nextgenout4/seqware-analysis/illumina/140502_UNC12-SN629_0366_AC3UT1ACXX/seqware-0.7.0_Mapsplice-0.7.4/140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC/sorted_genome_alignments.bam',
-            'MapspliceRSEM',
-            '0.7.4',
-            'samtools-sort-genome',
-            'Illumina HiSeq 2000',
-            2449977,
-            975937,
-            'TCGA RNA-Seq Multiplexed Paired-End Experiment on HiSeq 2000',
-            'TCGA RNA-Seq Paired-End Experiment',
-            72,
-            2449976,
-            '23b47813-7a77-44ca-b650-31a319c1f497',
-            undef,
-        ]]
-    };
-
     my $badDupSelectElement = {
         'statement'    => qr/SELECT.*/msi,
         'bound_params' => [ $DATA_HR->{'upload_id'} ],
@@ -770,7 +770,7 @@ sub test_getData {
         $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
 
         my $obj = makeBamForMetaGenerate();
-        my @dbSession = ($goodSelectElement);
+        my @dbSession = ($goodGetDataSelectElement);
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'session'} = [
@@ -808,7 +808,7 @@ sub test_getData {
         $module->mock('_metaGenerate_getDataReadCount', sub { return '1' } );
 
         my $obj = makeBamForMetaGenerate();
-        my @dbSession = ($goodSelectElement);
+        my @dbSession = ($goodGetDataSelectElement);
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'session'} = [
@@ -838,7 +838,7 @@ sub test_getData {
         $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
 
         my $obj = makeBamForMetaGenerate();
-        my @dbSession = ($goodSelectElement);
+        my @dbSession = ($goodGetDataSelectElement);
         $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'session'} = [
@@ -961,7 +961,7 @@ sub test_makeFileFromTemplate {
 }
 
 sub test_do_meta_generate {
-    plan( tests => 5);
+    plan( tests => 6);
 
     {
         # Mock EVERYTHING.
@@ -976,7 +976,7 @@ sub test_do_meta_generate {
         $module->mock('_metaGenerate_makeFileFromTemplate', sub { 1 } );
         $module->mock('dbSetDone', sub { 1 } );
         {
-            my $message = "Returns 1 on success";
+            my $message = "Returns 1 on success, if all internals mocked.";
             my $got = $obj->do_meta_generate();
             my $want = 1;
             is($got, $want, $message);
@@ -997,6 +997,8 @@ sub test_do_meta_generate {
         }
     }
 
+    # Mock everything except SetRunning and SetDone, Script DB for
+    # succesful run.
     {
         my %upload = %$UPLOAD_HR;
         my %data = %$DATA_HR;
@@ -1006,8 +1008,6 @@ sub test_do_meta_generate {
         $module->mock('_metaGenerate_linkBam', sub { return "not_a_File"; } );
         $module->mock('_metaGenerate_makeFileFromTemplate', sub { 1 } );
         my $obj = makeBamForMetaGenerate();
-        # Mock everything except SetRunning and SetDone, Script DB for
-        # succesful run.
         my @dbEvents_ok = (
             dbMockStep_Begin(),
             dbMockStep_SetTransactionLevel(),
@@ -1034,12 +1034,48 @@ sub test_do_meta_generate {
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'setRunWithReturn', @dbEvents_ok );
         {
-            my $message = "Sets done when completes normally.";
+            my $message = "Returns 1 on success when setRunning and setDone used for real";
             my $got = $obj->do_meta_generate();
             my $want = 1;
             is($got, $want, $message);
         }
     }
+
+    {
+        # Mock everything except getData.
+        my %upload = %$UPLOAD_HR;
+        my %data = %$DATA_HR;
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        my $obj = makeBamForMetaGenerate();
+        $module->mock('dbSetRunning', sub { return \%upload; } );
+        $module->mock('_metaGenerate_makeDataDir', sub { return "/dev/null"; } );
+        $module->mock('_metaGenerate_linkBam', sub { return "not_a_File"; } );
+        $module->mock('_metaGenerate_makeFileFromTemplate', sub { 1 } );
+        $module->mock('dbSetDone', sub { 1 } );
+
+        # Need to mock some getData internals also...
+        $module->mock('_metaGenerate_getDataReadGroup', sub { return '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC'; } );
+        $module->mock('_metaGenerate_getDataReadLength', sub { return '49' } );
+        $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'session'} = [
+            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+            { 'ret' => "$SAMTOOLD_VIEW_HEADERS", 'exit' => 0 },
+        ];
+        my @dbSession = ($goodGetDataSelectElement);
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
+        {
+            my $message = "Returns 1 on success when getData used for real";
+            my $got = $obj->do_meta_generate();
+            my $want = 1;
+            is($got, $want, $message);
+        }
+        # restore backtick mocking defaults - needs to be a module?
+        $mock_readpipe->{'session'} = undef;
+        $mock_readpipe->{'_idx'} = undef;
+        $mock_readpipe->{'mock'} = 0;
+    }
+
 
     {
         my %upload = %$UPLOAD_HR;

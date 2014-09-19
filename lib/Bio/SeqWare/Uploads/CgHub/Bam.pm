@@ -940,7 +940,7 @@ sub do_meta_generate {
         $uploadHR = $self->dbSetRunning( 'launch', 'meta-generate' );
         $self->sayDebug( 'Running meta_generate on: ', $uploadHR );
         if ($uploadHR)  {
-            my $dataHR = $self->_metaGenerate_getData( $uploadHR->{'upload_id'} );
+            my $dataHR = $self->_metaGenerate_getData( $uploadHR );
             $dataHR->{'dataDir'} = $self->_metaGenerate_makeDataDir( $dataHR );
             $dataHR->{'linkName'} = $self->_metaGenerate_linkBam( $dataHR );
             my $analysisXml   = File::Spec->catfile($dataHR->{'dataDir'}, 'analysis.xml'  );
