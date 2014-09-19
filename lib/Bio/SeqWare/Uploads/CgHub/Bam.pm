@@ -1479,6 +1479,7 @@ sub _metaGenerate_getData {
             'preservation'           => $preservation,
         };
 
+
         # Merge data.
 
         # Hard to test these, indicates this is probably multiple subroutines
@@ -1518,7 +1519,8 @@ sub _metaGenerate_getData {
         $self->sayDebug( "Template data is: ", $dataHR );
 
         for my $key (sort keys %$dataHR) {
-            $CLASS->ensureHashHasValue($dataHR, $key, "Problem with data, key \'%key\'");
+            next if $key eq 'external_status';  # Should be null at this point.
+            $CLASS->ensureHashHasValue($dataHR, $key, "Problem with data, key \'$key\'");
         }
     };
     if ($@) {

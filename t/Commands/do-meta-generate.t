@@ -698,7 +698,7 @@ sub test_getDataLibraryPrep {
 }
 
 sub test_getData {
-    plan( tests => 4 );
+    plan( tests => 5 );
 
     my $badDupSelectElement = {
         'statement'    => qr/SELECT.*/msi,
@@ -855,6 +855,35 @@ sub test_getData {
         $mock_readpipe->{'mock'} = 0;
     }
 
+    # Allowed undefined values don't cause error.
+    {
+        my %upload = %$UPLOAD_HR;
+        my %data = %$DATA_HR;
+        $upload{'external_status'} = undef;
+        $data{'external_status'} = undef;
+
+        my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
+        $module->mock('_metaGenerate_getDataReadGroup', sub { return '140502_UNC12-SN629_0366_AC3UT1ACXX_4_CAGATC'; } );
+        $module->mock('_metaGenerate_getDataReadLength', sub { return '49' } );
+        $module->mock('_metaGenerate_getDataReadCount', sub { return '2' } );
+
+        my $obj = makeBamForMetaGenerate();
+        my @dbSession = ($goodGetDataSelectElement);
+        $obj->{'dbh'}->{'mock_session'} = DBD::Mock::Session->new( "Good run", @dbSession );
+        $mock_readpipe->{'mock'} = 1;
+        $mock_readpipe->{'session'} = [
+            { 'ret' => "$SAMTOOLS_RETURN", 'exit' => 0 },
+            { 'ret' => "$SAMTOOLD_VIEW_HEADERS", 'exit' => 0 },
+        ];
+        my $got = $obj->_metaGenerate_getData( \%upload );
+        my $want = \%data;
+        {
+            is_deeply($got, $want, "Return value correct");
+        }
+        $mock_readpipe->{'session'} = undef;
+        $mock_readpipe->{'_idx'} = undef;
+        $mock_readpipe->{'mock'} = 0;
+    }
 }
 
 sub test_makeFileFromTemplate {
