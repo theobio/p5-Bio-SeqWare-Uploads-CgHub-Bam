@@ -5,7 +5,7 @@ use Data::Dumper;                # Simple data structure printing
 use Scalar::Util qw( blessed );  # Get class of objects
 use File::Spec;                  # Generic file handling.
 
-use Test::More 'tests' => 31;    # Main test module; run this many subtests
+use Test::More 'tests' => 32;    # Main test module; run this many subtests
 
 # CPAN modules
 use File::HomeDir qw(home);      # Finding the home directory is hard.
@@ -27,50 +27,52 @@ my $TEST_DATA_DIR = File::Spec->catdir( "t", "Data");
 my $TEST_CFG = File::Spec->catfile( $TEST_DATA_DIR, "test with space.config" );
 my $SAMPLE_FILE_BAM = File::Spec->catfile( $TEST_DATA_DIR, "samplesToUpload.txt" );
 my $SAMPLE_FILE = File::Spec->catfile( $TEST_DATA_DIR, "sampleList.txt" );
-my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy --workflow_id 38 status-local);
+my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy status-local);
 
 # Class helper (utility) subroutine tests
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
-subtest( 'getUuid()'     => \&testGetUuid    );
-subtest( 'getTimestamp()' => \&testGetTimestamp);
-subtest( 'getErrorName()' => \&testGetErrorName );
+subtest( 'getUuid()'        => \&testGetUuid    );
+subtest( 'getTimestamp()'   => \&testGetTimestamp);
+subtest( 'getErrorName()'   => \&testGetErrorName );
 subtest( 'reformatTimestamp()' => \&testReformatTimestamp );
-subtest( 'getFileBaseName()' => \&testGetFileBaseName );
+subtest( 'getFileBaseName()'   => \&testGetFileBaseName );
 
 # Main processing/API (infrastructure) tests
 subtest( 'new()'      => \&testNew );
 subtest( 'run()'      => \&testRun );
-subtest( 'getDbh()'  => \&testGetDbh);
-subtest( 'DESTROY()' => \&testDESTROY );
+subtest( 'getDbh()'   => \&testGetDbh);
+subtest( 'DESTROY()'  => \&testDESTROY );
 subtest( 'parseSampleFile()' => \&testParseSampleFile);
 
 # CLI (infrastructure) tests
-subtest( 'parseCli()'    => \&testParseCli    );
-subtest( 'loadOptions()'   => \&testLoadOptions );
-subtest( 'loadArguments()' => \&testLoadArguments );
+subtest( 'parseCli()'         => \&testParseCli    );
+subtest( 'loadOptions()'      => \&testLoadOptions );
+subtest( 'loadArguments()'    => \&testLoadArguments );
 subtest( 'getConfigOptions()' => \&testGetConfigOptions );
+subtest( 'validateCli()'      => \&testValidateCli    );
+
 
 # Reporting (infrastructure) tests
 subtest( 'say(),sayDebug(),SayVerbose(),sayError()' => \&testSayAndSayDebugAndSayVerboseAndSayError );
-subtest( 'getLogPrefix()' => \&testGetLogPrefix);
+subtest( 'getLogPrefix()'  => \&testGetLogPrefix);
 subtest( 'logifyMessage()' => \&testLogifyMessage);
 
 # Database (infrastructure) tests
-subtest( 'dbGetBamFileInfo()' => \&testDbGetBamFileInfo );
+subtest( 'dbGetBamFileInfo()'  => \&testDbGetBamFileInfo );
 subtest( 'dbSetUploadStatus()' => \&testDbSetUploadStatus );
-subtest( 'dbSetRunning()' => \&testDbSetRunning );
+subtest( 'dbSetRunning()'      => \&testDbSetRunning );
 subtest( 'dbSetDone()' => \&testDbSetDone );
 subtest( 'dbSetFail()' => \&testDbSetFail );
-subtest( 'dbDie()' => \&testDbDie );
+subtest( 'dbDie()'     => \&testDbDie );
 
 # Validation tests
-subtest( 'ensureIsDefined()' => \&testEnsureIsDefined );
+subtest( 'checkCompatibleHash()'   => \&testCheckCompatibleHash );
+subtest( 'ensureIsDefined()'       => \&testEnsureIsDefined );
 subtest( 'ensureIsntEmptyString()' => \&testEnsureIsntEmptyString );
-subtest( 'ensureHashHasValue()' => \&testEnsureHashHasValue );
-subtest( 'ensureIsFile()' => \&testEnsureIsFile );
-subtest( 'ensureIsDir()' => \&testEnsureIsDir );
-subtest( 'ensureIsbject()' => \&testEnsureIsObject );
-subtest( 'checkCompatibleHash()' => \&testCheckCompatibleHash );
+subtest( 'ensureHashHasValue()'    => \&testEnsureHashHasValue );
+subtest( 'ensureIsFile()'   => \&testEnsureIsFile );
+subtest( 'ensureIsDir()'    => \&testEnsureIsDir );
+subtest( 'ensureIsbject()'  => \&testEnsureIsObject );
 
 sub testNew {
     plan( tests => 2 );
@@ -716,7 +718,7 @@ sub testParseSampleFile {
 }
 
 sub testLoadOptions {
-    plan( tests => 19 );
+    plan( tests => 16 );
 
     my %reqOpt = (
         'dbUser' => 'dummy', 'dbPassword' => 'dummy',
@@ -764,19 +766,6 @@ sub testLoadOptions {
         my $optHR = { 'log' => 1, %reqOpt};
         $obj->loadOptions($optHR);
         ok($obj->{'_optHR'}->{'log'}, "log set if needed.");
-    }
-    {
-        @ARGV = @DEF_CLI;
-        my $obj = $CLASS->new();
-        $obj->loadOptions( \%reqOpt );
-        ok(! $obj->{'_optHR'}->{'log'}, "log not set by default.");
-    }
-
-    # --workflow_id
-    {
-        @ARGV = ('--log', @DEF_CLI);
-        my $obj = $CLASS->new();
-        ok($obj->{'workflow_id'} = 38, "workflow id is set.");
     }
     {
         @ARGV = @DEF_CLI;
@@ -847,16 +836,6 @@ sub testLoadOptions {
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
     }
     {
-        my $message = 'Error if no --workflow_id opt';
-        my $obj = makeBam();
-        my $optHR = {
-            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host',
-            'dbSchema' => 'dummy'
-        };
-        my $errorRE = qr/^--workflow_id option required\./;
-        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
-    }
-    {
         my $message = 'Error if bad --workflow_id opt (41)';
         my $obj = makeBam();
         my $optHR = {
@@ -867,6 +846,39 @@ sub testLoadOptions {
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
     }
 
+}
+
+sub testValidateCli {
+    plan( tests => 4 );
+
+   my @DbOpts = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy);
+   my @launchNoWfArgv = (@DbOpts, 'launch', $SAMPLE_FILE);
+   my @launchWfArgv = (@DbOpts, 'launch', '--workflow_id', 38, $SAMPLE_FILE);
+   my @notLaunchNoWfArgv = (@DbOpts, 'status-local', $SAMPLE_FILE);
+   my @notLaunchWfArgv = (@DbOpts, 'status-local', '--workflow_id', 38, $SAMPLE_FILE);
+
+    # --workflow_id required by command 'launch', optional elsewhere.
+    {
+        @ARGV = @launchWfArgv;
+        my $obj = $CLASS->new();
+        ok($obj->{'workflow_id'} = 38, "workflow id is set, command = 'launch'");
+    }
+    {
+        @ARGV = @launchNoWfArgv;
+        my $message= "workflow id is not set, command != 'launch'";
+        my $errorRE = qr/^CliValidationException: --workflow_id option required for command 'launch'\.\n/;
+        throws_ok( sub {$CLASS->new();}, $errorRE, $message);
+    }
+    {
+        @ARGV = @notLaunchWfArgv;
+        my $obj = $CLASS->new();
+        ok($obj->{'workflow_id'} = 38, "workflow id is set, command != 'launch'");
+    }
+    {
+        @ARGV = @notLaunchNoWfArgv;
+        my $obj = $CLASS->new();
+        ok(! defined $obj->{'workflow_id'}, "workflow id is not set, command != 'launch'");
+    }
 }
 
 sub testLoadArguments {

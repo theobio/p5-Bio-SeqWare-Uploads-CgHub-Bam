@@ -1,5 +1,10 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
+0.000.004 - Validate metadata - meta-generate
+ [MAJOR] - Implement meta-validate
+ [FIX]   - Make --workflow option required only for launch
+ [FIX]   - Make --workflow option optional if have BAM filename at launch
+
 0.000.003 - Create metaData - meta-generate
  [MAJOR] - Implement meta-generate
  [API] - Rename setUploadStatus, setFail and setDone to use db prefix.
