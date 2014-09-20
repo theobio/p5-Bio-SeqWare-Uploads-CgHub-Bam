@@ -547,6 +547,7 @@ sub init {
     my %opt = ( %$configOptionsHR, %$cliOptionsHR );
     $self->loadOptions( \%opt );
     $self->loadArguments( $opt{'argumentsAR'} );
+    $self->validateCli();
 
     # Retrspectve logging (as logging being configured above.)
     $self->sayDebug("Loading config file:", $configFile);
@@ -817,10 +818,11 @@ sub loadOptions {
     $self->{'dbSchema'}   = $optHR->{'dbSchema'};
 
     my $val = $optHR->{'workflow_id'};
-    unless ( $val ) { croak("--workflow_id option required." ); };
-    my %okVals = ( '38' => 1, '39' => 1, '40' => 1);
-    unless (exists $okVals{$val}) { croak("--workflow_id must be 38, 39, or 40." ); };
-    $self->{'workflow_id'} = $val;
+    if (defined $val) {
+        my %okVals = ( '38' => 1, '39' => 1, '40' => 1);
+        unless (exists $okVals{$val}) { croak("--workflow_id must be 38, 39, or 40." ); };
+        $self->{'workflow_id'} = $val;
+    }
 
     return 1;
 }
@@ -861,6 +863,30 @@ sub loadArguments {
         croak "Too many arguments for cammand '$command'. Try --help.\n";
     }
 
+    return 1;
+}
+
+=head2 validateCli
+
+    $self->crossValidateCli()
+
+Any validation involving more than one option, more than one argument, or
+any combination of option and argument are vaildated here. That means all
+argument-specific options have to be validated here.
+
+=cut
+
+sub validateCli {
+
+    my $self = shift;
+
+    if ($self->{'command'} eq 'launch') {
+        my $val = $self->{'workflow_id'};
+        if ( ! defined $val ) {
+             croak("CliValidationException: --workflow_id option required for command 'launch'.\n" );
+        }
+    }
+ 
     return 1;
 }
 
