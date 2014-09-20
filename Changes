@@ -1,9 +1,12 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
-0.000.005 - upload metadata - meta-upload
+0.000.006 - Upload bam file - file-upload command
+ [MAJOR] - Implement file-upload
+
+0.000.005 - Upload metadata - meta-upload command
  [MAJOR] - Implement meta-upload
 
-0.000.004 - Validate metadata - meta-generate
+0.000.004 - Validate metadata - meta-generate command
  [MAJOR] - Implement meta-validate
  [FIX]   - Make --workflow option required only for launch
  [FIX]   - Make --workflow option optional if have BAM filename at launch
