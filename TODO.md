@@ -17,3 +17,4 @@ data blocks for the individual xml runs. Reduces coupling, increases testability
 2014-09-20 0.000.004 [API] - Refactor error checking on external exec commands into
 something like the ensure commands.
 2014-09-20 0.000.004 [API] - Refactor run() to reduce error checking boiler-plate.
+2014009-20 0.000.006 [TEST] - Refactor mock read pipe into a module.
