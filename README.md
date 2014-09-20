@@ -4,7 +4,7 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 # VERSION
 
-Version 0.000.003
+Version 0.000.004
 
 # SYNOPSIS
 
@@ -265,6 +265,14 @@ Valdates and loads the CLI arguments (What is left over after removing options
 up to and including a lone "--"). Returns nothing on success. As this does
 validation, it can die with lots of different messages.
 
+## validateCli
+
+    $self->crossValidateCli()
+
+Any validation involving more than one option, more than one argument, or
+any combination of option and argument are vaildated here. That means all
+argument-specific options have to be validated here.
+
 ## do\_launch
 
 Called automatically by runner framework to implement the launch command.
@@ -467,6 +475,13 @@ The file\_path and the dataDir must exist. The link is named after the
 
 The link name only (no path) will be returned.
 
+## \_metaValidate
+
+    $self->_metaValidate( $uploadHR );
+
+    Validates the metadata to cghub. Various parameters are hard-coded or
+    passed as options.
+
 ## dbInsertUpload
 
     my $upload_id = $self->dbInsertUpload( $recordHR );
@@ -658,7 +673,7 @@ You can install this module directly from github using cpanm
     $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
     # Any specific release:
-    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.003.tar.gz
+    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.004.tar.gz
 
 You can also manually download a release (zipped file) from github at
 [https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases](https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases).
