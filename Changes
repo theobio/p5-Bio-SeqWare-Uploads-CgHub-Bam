@@ -1,5 +1,8 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
+0.000.005 - upload metadata - meta-upload
+ [MAJOR] - Implement meta-upload
+
 0.000.004 - Validate metadata - meta-generate
  [MAJOR] - Implement meta-validate
  [FIX]   - Make --workflow option required only for launch

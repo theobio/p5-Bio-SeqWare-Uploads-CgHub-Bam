@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use Cwd;                         # get current working directory.
 
-use Test::More 'tests' => 10;     # Main test module; run this many tests
+use Test::More 'tests' => 10;    # Main test module; run this many tests
 use Test::Exception;             # Testing where code dies and errors
 use Test::MockModule;            # Fake subroutine return values remotely
 
@@ -153,7 +153,7 @@ my $UPLOAD_HR = {
         $mock_readpipe->{'mock'} = 0;
         $mock_readpipe->{'exit'} = 0;
     }
-    # $? is 0 (indicating success) but unexpecte text is returned.
+    # $? is 0 (indicating success) but unexpected text is returned.
     {
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'ret'} = $BAD_VALIDATOR_OUT;
@@ -172,7 +172,7 @@ my $UPLOAD_HR = {
     }
 }
 
-# Good run of do_meta_upload
+# Good run of do_meta_validate
 {
     {
         my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
@@ -183,7 +183,7 @@ my $UPLOAD_HR = {
         $mock_readpipe->{'mock'} = 1;
         $mock_readpipe->{'ret'} = $GOOD_VALIDATOR_OUT;
         {
-            my $message = "Normal run of do_meta_upload.";
+            my $message = "Normal run of do_meta_validate.";
             my $got = $obj->do_meta_validate();
             my $want = 1;
             is($got, $want, $message);
@@ -195,7 +195,7 @@ my $UPLOAD_HR = {
         $module->mock('dbSetRunning', sub { return; } );
         my $obj = makeBamForMetaValidate();
         {
-            my $message = "Normal run of do_meta_upload, Nothing to do.";
+            my $message = "Normal run of do_meta_validate, Nothing to do.";
             my $got = $obj->do_meta_validate();
             my $want = 1;
             is($got, $want, $message);
@@ -203,7 +203,7 @@ my $UPLOAD_HR = {
     }
 }
 
-# Bad run of do_meta_upload, mocking upload status changes, with uploadHR
+# Bad run of do_meta_validate, mocking validate status changes, with uploadHR
 {
     {
         my $module = new Test::MockModule('Bio::SeqWare::Uploads::CgHub::Bam');
@@ -235,7 +235,7 @@ my $UPLOAD_HR = {
         $obj->{'dbh'}->{'mock_session'} =
             DBD::Mock::Session->new( 'setRunWithReturn', @dbEvents_ok );
         {
-            my $message = "Bad run of do_meta_upload with upload data.";
+            my $message = "Bad run of do_meta_validate with upload data.";
             my $errorRE = qr/^KaboomException: Bang\.\n$/;
             throws_ok(sub {$obj->do_meta_validate();}, $errorRE, $message );
         }
@@ -245,7 +245,7 @@ my $UPLOAD_HR = {
         $module->mock('dbSetRunning', sub { die "KaboomException: Bang.\n"; } );
         my $obj = makeBamForMetaValidate();
         {
-            my $message = "Bad run of do_meta_upload with no upload data.";
+            my $message = "Bad run of do_meta_validate with no upload data.";
             my $errorRE = qr/^KaboomException: Bang\.\n\tAlso: upload data not available\n/;
             throws_ok(sub {$obj->do_meta_validate();}, $errorRE, $message );
         }
