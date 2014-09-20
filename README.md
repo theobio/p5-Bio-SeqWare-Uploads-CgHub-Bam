@@ -4,7 +4,7 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 # VERSION
 
-Version 0.000.004
+Version 0.000.005
 
 # SYNOPSIS
 
@@ -479,8 +479,15 @@ The link name only (no path) will be returned.
 
     $self->_metaValidate( $uploadHR );
 
-    Validates the metadata to cghub. Various parameters are hard-coded or
-    passed as options.
+Validates the metadata to cghub for one run. Various parameters are hard coded
+or passed as options.
+
+## \_metaUpload
+
+    $self->_metaUpload( $uploadHR );
+
+Uploads the metadata to cghub for one run. Various parameters are hard coded
+or passed as options.
 
 ## dbInsertUpload
 
@@ -673,7 +680,7 @@ You can install this module directly from github using cpanm
     $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
     # Any specific release:
-    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.004.tar.gz
+    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.005.tar.gz
 
 You can also manually download a release (zipped file) from github at
 [https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases](https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases).

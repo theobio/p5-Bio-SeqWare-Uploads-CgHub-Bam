@@ -48,11 +48,11 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 =head1 VERSION
 
-Version 0.000.004
+Version 0.000.005
 
 =cut
 
-our $VERSION = '0.000004';
+our $VERSION = '0.000005';
 
 =head1 SYNOPSIS
 
@@ -1034,6 +1034,26 @@ Not intended to be called directly.
 
 sub do_meta_upload {
     my $self = shift;
+
+    my $uploadHR;
+    eval {
+        $uploadHR = $self->dbSetRunning( 'meta-validate', 'meta-upload' );
+        $self->sayDebug( 'Running meta_upload on: ', $uploadHR );
+        if ($uploadHR)  {
+            my $dataHR = $self->_metaUpload( $uploadHR );
+            $self->dbSetDone( $uploadHR, 'meta-upload');
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        if ($uploadHR) {
+            $error = $self->dbSetFail( $uploadHR, 'meta-upload', $error);
+        }
+        else {
+            $error .= "\tAlso: upload data not available\n";
+        }
+        $self->dbDie($error);
+    }
     return 1;
 }
 
@@ -1811,8 +1831,8 @@ sub _metaGenerate_linkBam {
 
     $self->_metaValidate( $uploadHR );
 
-    Validates the metadata to cghub. Various parameters are hard-coded or
-    passed as options.
+Validates the metadata to cghub for one run. Various parameters are hard coded
+or passed as options.
 
 =cut
 
@@ -1829,7 +1849,6 @@ sub _metaValidate {
     my $oldCwd = getcwd();
     chdir( $dataDir );
 
-    my $errorMessage = "";
     my $OK_VALIDATED_REGEXP = qr/Metadata Validation Succeeded\./m;
 
     my $command = $self->{'cghubSubmitExec'} . " -s " . $self->{'cghubSubmitUrl'} . "  -u $dataDir --validate-only 2>&1";
@@ -1864,6 +1883,78 @@ sub _metaValidate {
     $self->sayDebug("CgSubmit program (in validate mode) returned:\n$validateResult\n");
 
     return 1;
+}
+
+=head2 _metaUpload
+
+    $self->_metaUpload( $uploadHR );
+
+Uploads the metadata to cghub for one run. Various parameters are hard coded
+or passed as options.
+
+=cut
+
+sub _metaUpload {
+
+    my $self = shift;
+    my $uploadHR = shift;
+
+    my $dataDir = File::Spec->catdir(
+        $uploadHR->{'metadata_dir'},
+        $uploadHR->{'cghub_analysis_id'}
+    );
+    $self->ensureIsDir( $dataDir );
+    my $oldCwd = getcwd();
+    chdir( $dataDir );
+
+    my $OK_SUBMIT_META_REGEXP = qr/Metadata Submission Succeeded\./m;
+    my $ERROR_RESUBMIT_META_REGEXP = qr/Error\s*: You are attempting to submit an analysis using a uuid that already exists within the system and is not in the upload or submitting state/m;
+
+    my $command = "$self->{cghubSubmitExec} -s $self->{cghubSubmitUrl} -c $self->{chghubSubmitCert} -u $dataDir 2>&1";
+    $self->sayVerbose( "SUBMIT META COMMAND: \"$command\"\n" );
+
+    # Note: failure is undef, system exit in $?
+    my $submitMetaResult = qx/$command/;
+    chdir( $oldCwd );
+
+    if ($?) {
+        if (! $submitMetaResult ) {
+            die ("MetaUploadExec-$?-NoOutputException: Exited with error value \"$?\".\n"
+                . "\tNo output was generated.\n"
+                . "\tOriginal command was: $command\n" );
+        }
+        elsif ( $submitMetaResult =~ $ERROR_RESUBMIT_META_REGEXP ) {
+            die( "MetaUploadExec-$?-RepeatException: Already submitted. Exited with error value \"$?\".\n"
+                . "\tOutput was: $submitMetaResult\n"
+                . "\tOriginal command was: $command\n" );
+        }
+        else {
+            die ("MetaUploadExec-$?-WithOutputException: Exited with error value \"$?\".\n"
+                . "\tOutput was: $submitMetaResult\n"
+                . "\tOriginal command was: $command\n" );
+        }
+    }
+    if (! $submitMetaResult) {
+        die ( "MetaUploadExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\tOriginal command was: $command\n" );
+    }
+    # Don't know if this is an error exit or a normal exit...
+    elsif ( $submitMetaResult =~ $ERROR_RESUBMIT_META_REGEXP ) {
+            die( "MetaUploadExecRepeatException: Already submitted. Exited with success though. Strange.\n"
+                . "\tOutput was: $submitMetaResult\n"
+                . "\tOriginal command was: $command\n" );
+    }
+    elsif ( $submitMetaResult !~ $OK_SUBMIT_META_REGEXP ) {
+        $self->{'error'} = "exec-unexpected-output";
+        die( "MetaUploadExecUnexpectedOutput: Apparently failed to validate.\n"
+            . "\tOutput was: $submitMetaResult\n"
+            . "\tOriginal command was:\n$command\n" );
+    }
+
+    $self->sayVerbose("CgSubmit program (in submission mode) returned:\n$submitMetaResult\n");
+
+    return 1;
+
 }
 
 =head2 dbInsertUpload
@@ -2383,7 +2474,7 @@ You can install this module directly from github using cpanm
    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
    # Any specific release:
-   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.004.tar.gz
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.005.tar.gz
 
 You can also manually download a release (zipped file) from github at
 L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases>.
