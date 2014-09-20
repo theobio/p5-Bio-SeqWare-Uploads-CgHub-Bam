@@ -17,6 +17,7 @@ use IO::File ;     # File io using variables as fileHandles.
                    # Note: no errors on open failure.
 use Scalar::Util qw( blessed );  # Get class of objects
 use File::Path;    # Create file paths
+use Cwd;           # Get current working directory.
 
 # Cpan modules
 use File::HomeDir qw(home);     # Finding the home directory is hard.
@@ -47,11 +48,11 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 =head1 VERSION
 
-Version 0.000.003
+Version 0.000.004
 
 =cut
 
-our $VERSION = '0.000003';
+our $VERSION = '0.000004';
 
 =head1 SYNOPSIS
 
@@ -975,6 +976,26 @@ Not intended to be called directly.
 
 sub do_meta_validate {
     my $self = shift;
+
+    my $uploadHR;
+    eval {
+        $uploadHR = $self->dbSetRunning( 'meta-generate', 'meta-validate' );
+        $self->sayDebug( 'Running meta_validate on: ', $uploadHR );
+        if ($uploadHR)  {
+            my $dataHR = $self->_metaValidate( $uploadHR );
+            $self->dbSetDone( $uploadHR, 'meta-validate');
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        if ($uploadHR) {
+            $error = $self->dbSetFail( $uploadHR, 'meta-validate', $error);
+        }
+        else {
+            $error .= "\tAlso: upload data not available\n";
+        }
+        $self->dbDie($error);
+    }
     return 1;
 }
 
@@ -1760,6 +1781,65 @@ sub _metaGenerate_linkBam {
     return $linkName;
 }
 
+=head2 _metaValidate
+
+    $self->_metaValidate( $uploadHR );
+
+    Validates the metadata to cghub. Various parameters are hard-coded or
+    passed as options.
+
+=cut
+
+sub _metaValidate {
+
+    my $self = shift;
+    my $uploadHR = shift;
+
+    my $dataDir = File::Spec->catdir(
+        $uploadHR->{'metadata_dir'},
+        $uploadHR->{'cghub_analysis_id'}
+    );
+    $self->ensureIsDir( $dataDir );
+    my $oldCwd = getcwd();
+    chdir( $dataDir );
+
+    my $errorMessage = "";
+    my $OK_VALIDATED_REGEXP = qr/Metadata Validation Succeeded\./m;
+
+    my $command = $self->{'cghubSubmitExec'} . " -s " . $self->{'cghubSubmitUrl'} . "  -u $dataDir --validate-only 2>&1";
+    $self->sayVerbose( "VALIDATE COMMAND: \"$command\"" );
+
+    # Note: failure is undef, system exit in $?
+    my $validateResult = qx/$command/;
+    chdir( $oldCwd );
+
+    if ($?) {
+        if ($validateResult) {
+            die ("ValidationExec-$?-WithOutputException: Exited with error value \"$?\".\n"
+                . "\tOutput was: $validateResult\n"
+                . "\tOriginal command was: $command\n" );
+        }
+        else {
+            die ("ValidationExec-$?-NoOutputException: Exited with error value \"$?\".\n"
+                . "\tNo output was generated.\n"
+                . "\tOriginal command was: $command\n" );
+        }
+    }
+    elsif (! $validateResult) {
+        die ( "ValidationExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\tOriginal command was: $command\n" );
+    }
+    elsif ( $validateResult !~ $OK_VALIDATED_REGEXP ) {
+        die( "ValidationExecUnexpectedOutput: Apparently failed to validate.\n"
+            . "\tActual validation result was: $validateResult\n"
+            . "\tOriginal command was:\n$command\n" );
+    }
+
+    $self->sayDebug("CgSubmit program (in validate mode) returned:\n$validateResult\n");
+
+    return 1;
+}
+
 =head2 dbInsertUpload
 
     my $upload_id = $self->dbInsertUpload( $recordHR );
@@ -2277,7 +2357,7 @@ You can install this module directly from github using cpanm
    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
    # Any specific release:
-   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.003.tar.gz
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.004.tar.gz
 
 You can also manually download a release (zipped file) from github at
 L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases>.
