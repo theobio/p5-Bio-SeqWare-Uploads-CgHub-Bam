@@ -48,11 +48,11 @@ Bio::SeqWare::Uploads::CgHub::Bam - Upload a bam file to CgHub
 
 =head1 VERSION
 
-Version 0.000.005
+Version 0.000.006
 
 =cut
 
-our $VERSION = '0.000005';
+our $VERSION = '0.000006';
 
 =head1 SYNOPSIS
 
@@ -1066,6 +1066,26 @@ Not intended to be called directly.
 
 sub do_file_upload {
     my $self = shift;
+
+    my $uploadHR;
+    eval {
+        $uploadHR = $self->dbSetRunning( 'meta-upload', 'file-upload' );
+        $self->sayDebug( 'Running do_file_upload on: ', $uploadHR );
+        if ($uploadHR)  {
+            my $dataHR = $self->_fileUpload( $uploadHR );
+            $self->dbSetDone( $uploadHR, 'file-upload');
+        }
+    };
+    if ($@) {
+        my $error = $@;
+        if ($uploadHR) {
+            $error = $self->dbSetFail( $uploadHR, 'file-upload', $error);
+        }
+        else {
+            $error .= "\tAlso: upload data not available\n";
+        }
+        $self->dbDie($error);
+    }
     return 1;
 }
 
@@ -1945,7 +1965,6 @@ sub _metaUpload {
                 . "\tOriginal command was: $command\n" );
     }
     elsif ( $submitMetaResult !~ $OK_SUBMIT_META_REGEXP ) {
-        $self->{'error'} = "exec-unexpected-output";
         die( "MetaUploadExecUnexpectedOutput: Apparently failed to validate.\n"
             . "\tOutput was: $submitMetaResult\n"
             . "\tOriginal command was:\n$command\n" );
@@ -1955,6 +1974,77 @@ sub _metaUpload {
 
     return 1;
 
+}
+
+=head2 _fileUpload
+
+    $self->_fileUpload( $uploadHR );
+
+Uploads the bam file to cghub for one run. Various parameters are hard coded
+or passed as options.
+
+=cut
+
+sub _fileUpload {
+
+    my $self = shift;
+    my $uploadHR = shift;
+
+    my $dataDir = File::Spec->catdir(
+        $uploadHR->{'metadata_dir'},
+        $uploadHR->{'cghub_analysis_id'}
+    );
+    my $uploadManifest = File::Spec->catfile( $dataDir, 'manifest.xml' );
+
+    $self->ensureIsDir( $dataDir );
+    my $oldCwd = getcwd();
+    chdir( $dataDir );
+
+    my $OK_SUBMIT_REGEXP = qr/100\.000/m;
+    my $ERROR_RESUBMIT_REGEXP = qr/Error\s*: Your are attempting to upload to a uuid which already exists within the system and is not in the submitted or uploading state\. This is not allowed\./;
+
+    my $command = "$self->{cghubUploadExec} -vvvv -c $self->{chghubSubmitCert} -u $uploadManifest -p $dataDir 2>&1";
+    $self->sayVerbose( "SUBMIT META COMMAND: \"$command\"\n" );
+
+    # Note: failure is undef, system exit in $?
+    my $submitUploadResult = qx/$command/;
+    chdir( $oldCwd );
+
+    if ($?) {
+        if (! $submitUploadResult ) {
+            die ("FileUploadExec-$?-NoOutputException: Exited with error value \"$?\".\n"
+                . "\tNo output was generated.\n"
+                . "\tOriginal command was: $command\n" );
+        }
+        elsif ( $submitUploadResult =~ $ERROR_RESUBMIT_REGEXP ) {
+            die( "FileUploadExec-$?-RepeatException: Already submitted. Exited with error value \"$?\".\n"
+                . "\tOutput was: $submitUploadResult\n"
+                . "\tOriginal command was: $command\n" );
+        }
+        else {
+            die ("FileUploadExec-$?-WithOutputException: Exited with error value \"$?\".\n"
+                . "\tOutput was: $submitUploadResult\n"
+                . "\tOriginal command was: $command\n" );
+        }
+    }
+    elsif (! $submitUploadResult) {
+        die ( "FileUploadExecNoOutputException: Neither error nor result generated. Strange.\n"
+                . "\tOriginal command was: $command\n" );
+    }
+    # Don't know if this is an error exit or a normal exit...
+    elsif ( $submitUploadResult =~ $ERROR_RESUBMIT_REGEXP ) {
+            die( "FileUploadExecRepeatException: Already submitted. Exited with success though. Strange.\n"
+                . "\tOutput was: $submitUploadResult\n"
+                . "\tOriginal command was: $command\n" );
+    }
+    elsif ( $submitUploadResult !~ $OK_SUBMIT_REGEXP ) {
+        die( "FileUploadExecUnexpectedOutput: Apparently failed to validate.\n"
+            . "\tOutput was: $submitUploadResult\n"
+            . "\tOriginal command was:\n$command\n" );
+    }
+
+    $self->sayVerbose("GtUpload program returned:\n$submitUploadResult\n");
+    return 1;
 }
 
 =head2 dbInsertUpload
@@ -2474,7 +2564,7 @@ You can install this module directly from github using cpanm
    $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam
 
    # Any specific release:
-   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.005.tar.gz
+   $ cpanm https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Bam/archive/v0.000.006.tar.gz
 
 You can also manually download a release (zipped file) from github at
 L<https://github.com/theobio/p5-Bio-SeqWare-Uploads-CgHub-Fastq/releases>.

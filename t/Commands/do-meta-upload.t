@@ -105,7 +105,7 @@ my $BAD_META_UPLOAD = "Fake (UNKNOWN) Submission Return\n"
     }
 }
 
-# Errors from _metaValidate
+# Errors from _metaUpload
 {
     # $? not 0 (indicating failure) and text returned
     {
