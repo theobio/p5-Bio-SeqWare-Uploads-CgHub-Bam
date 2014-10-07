@@ -165,9 +165,10 @@ provided via perldoc upload-cghub-bam. Ignored if specified in a config file
 
 =over 3
 
-=item --workflow_id
+=item --workflow_id | --wf
 
 The id of the workflow to upload the bams for. Must be one of 38, 39, or 40.
+Required if using "launch" command.
 
 =back
 
@@ -328,6 +329,16 @@ This allows for strings with leading or trailing whitespace, escaped characters,
 etc.
 
 =back
+
+=cut
+
+=head1 EXAMPLES
+
+    upload-cghub-bam --wf 39 launch sample_list.tsv
+    upload-cghub-bam --debug meta-generate
+    upload-cghub-bam --verbose meta-validate
+    upload-cghub-bam meta-upload
+    upload-cghub-bam file-upload
 
 =cut
 

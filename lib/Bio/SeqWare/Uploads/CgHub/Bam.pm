@@ -120,7 +120,7 @@ Creates and returns a new unique string form uuid like
 
 sub getUuid {
     my $class = shift;
-    return Data::GUID->new()->as_string();
+    return lc( Data::GUID->new()->as_string());
 }
 
 =head2 getErrorName
@@ -630,7 +630,7 @@ sub parseCli {
         'dbSchema=s'   => \$opt{'dbSchema'},
 
         # Data options
-        'workflow_id=i' => \$opt{'workflow_id'},
+        'workflow_id|wf=i' => \$opt{'workflow_id'},
 
         # Input options.
         'config=s'   => \$opt{'config'},

@@ -1250,13 +1250,18 @@ sub testGetErrorName {
 }
 
 sub testGetUuid {
-    plan( tests => 3);
+    plan( tests =>  4);
 
     my $uuid = $CLASS->getUuid();
     my $uuid2 = $CLASS->getUuid();
     like( $uuid, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "uuid generated as string");
     like( $uuid2, qr/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/, "another uuid generated as string");
     isnt( $uuid, $uuid2, "two successive uuids are not the same");
+    # Need to have a uuid with a letter in it to test lower case
+    while ($uuid !~ /a|b|c|d|e|f/i ) {
+        $uuid = $CLASS->getUuid();
+    }
+    is( lc($uuid), $uuid, "lowercase uuid");
 }
 
 sub testGetTimestamp {
