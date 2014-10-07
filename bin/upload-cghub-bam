@@ -13,7 +13,7 @@ upload-cghub-bam - Upload bam files to CgHub as a stepwise workflow
 
 =head1 VERSION
 
-Version 0.000.006
+Version 0.000.007
 
 =cut
 

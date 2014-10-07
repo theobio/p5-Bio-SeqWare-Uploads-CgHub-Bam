@@ -1,5 +1,9 @@
 Revision history for p5-Bio-SeqWare-Uploads-CgHub-Bam
 
+0.000.007 - Lower case UUID fix.
+ [FIX] - Output only lower-case uuids.
+ [ADD] - CLI --wf alias for --workflow_id
+
 0.000.006 - Upload bam file - file-upload command
  [MAJOR] - Implement file-upload
 
