@@ -54,7 +54,7 @@ Version 0.000.007
 
 =cut
 
-our $VERSION = '0.000007';
+our $VERSION = '0.000008';
 
 =head1 SYNOPSIS
 
@@ -537,11 +537,11 @@ sub init {
     $self->{'xmlSchema'} = 'SRA_1-5',
     $self->{'templateBaseDir'}  = dist_dir('Bio-SeqWare-Uploads-CgHub-Bam'),
 
-    # Might want to make these options and pass in by config file.
-    $self->{'cghubSubmitExec'}  = '/usr/bin/cgsubmit',
-    $self->{'cghubUploadExec'}  = '/usr/bin/gtupload',
-    $self->{'cghubSubmitUrl'}   = 'https://cghub.ucsc.edu/',
-    $self->{'chghubSubmitCert'} = '/datastore/alldata/tcga/CGHUB/Key.20140221/cghub.key',
+    # Testing passing these in as config options.
+#    $self->{'cghubSubmitExec'}  = '/usr/bin/cgsubmit',
+#    $self->{'cghubUploadExec'}  = '/usr/bin/gtupload',
+#    $self->{'cghubSubmitUrl'}   = 'https://cghub.ucsc.edu/',
+#    $self->{'cghubSubmitCert'} = '/datastore/alldata/tcga/CGHUB/Key.20140221/cghub.key',
 
     my $cliOptionsHR = $self->parseCli();
     my $configFile = $cliOptionsHR->{'config'};
@@ -641,6 +641,11 @@ sub parseCli {
         'verbose'    => \$opt{'verbose'},
         'debug'      => \$opt{'debug'},
         'log'        => \$opt{'log'},
+
+        'cghubSubmitExec=s'    => \$opt{'cghubSubmitExec'},
+        'cghubUploadExec=s'    => \$opt{'cghubUploadExec'},
+        'cghubSubmitUrl=s'    => \$opt{'cghubSubmitUrl'},
+        'cghubSubmitCert=s'    => \$opt{'cghubSubmitCert'},
 
         # Short-circuit options.
         'version'      => sub {
@@ -818,6 +823,16 @@ sub loadOptions {
     $self->{'dbPassword'} = $optHR->{'dbPassword'};
     $self->{'dbHost'}     = $optHR->{'dbHost'};
     $self->{'dbSchema'}   = $optHR->{'dbSchema'};
+
+    $self->{'cghubSubmitExec'}  = $optHR->{'cghubSubmitExec'};
+    $self->{'cghubUploadExec'}  = $optHR->{'cghubUploadExec'};
+    $self->{'cghubSubmitUrl'}   = $optHR->{'cghubSubmitUrl'};
+    $self->{'cghubSubmitCert'} = $optHR->{'cghubSubmitCert'};
+
+    unless ( $optHR->{'cghubSubmitExec'} ) { croak("--cghubSubmitExec option required." ); };
+    unless ( $optHR->{'cghubUploadExec'} ) { croak("--cghubUploadExec option required." ); };
+    unless ( $optHR->{'cghubSubmitUrl'}  ) { croak("--cghubSubmitUrl option required."  ); };
+    unless ( $optHR->{'cghubSubmitCert'}) { croak("--cghubSubmitCert option required."); };
 
     my $val = $optHR->{'workflow_id'};
     if (defined $val) {
@@ -1932,7 +1947,7 @@ sub _metaUpload {
     my $OK_SUBMIT_META_REGEXP = qr/Metadata Submission Succeeded\./m;
     my $ERROR_RESUBMIT_META_REGEXP = qr/Error\s*: You are attempting to submit an analysis using a uuid that already exists within the system and is not in the upload or submitting state/m;
 
-    my $command = "$self->{cghubSubmitExec} -s $self->{cghubSubmitUrl} -c $self->{chghubSubmitCert} -u $dataDir 2>&1";
+    my $command = "$self->{cghubSubmitExec} -s $self->{cghubSubmitUrl} -c $self->{cghubSubmitCert} -u $dataDir 2>&1";
     $self->sayVerbose( "SUBMIT META COMMAND: \"$command\"\n" );
 
     # Note: failure is undef, system exit in $?
@@ -2005,7 +2020,7 @@ sub _fileUpload {
     my $OK_SUBMIT_REGEXP = qr/100\.000/m;
     my $ERROR_RESUBMIT_REGEXP = qr/Error\s*: Your are attempting to upload to a uuid which already exists within the system and is not in the submitted or uploading state\. This is not allowed\./;
 
-    my $command = "$self->{cghubUploadExec} -vvvv -c $self->{chghubSubmitCert} -u $uploadManifest -p $dataDir 2>&1";
+    my $command = "$self->{cghubUploadExec} -vvvv -c $self->{cghubSubmitCert} -u $uploadManifest -p $dataDir 2>&1";
     $self->sayVerbose( "SUBMIT META COMMAND: \"$command\"\n" );
 
     # Note: failure is undef, system exit in $?

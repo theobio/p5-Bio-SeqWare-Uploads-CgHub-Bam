@@ -27,7 +27,9 @@ my $TEST_DATA_DIR = File::Spec->catdir( "t", "Data");
 my $TEST_CFG = File::Spec->catfile( $TEST_DATA_DIR, "test with space.config" );
 my $SAMPLE_FILE_BAM = File::Spec->catfile( $TEST_DATA_DIR, "samplesToUpload.txt" );
 my $SAMPLE_FILE = File::Spec->catfile( $TEST_DATA_DIR, "sampleList.txt" );
-my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy status-local);
+my @DEF_CLI = qw(--dbUser dummy --dbPassword dummy --dbHost dummy --dbSchema dummy
+                 --cghubSubmitExec dummy --cghubUploadExec dummy --cghubSubmitUrl dummy
+                 --cghubSubmitCert dummy status-local);
 
 # Class helper (utility) subroutine tests
 subtest( 'fixupTildePath()' => \&testFixupTildePath );
@@ -718,11 +720,13 @@ sub testParseSampleFile {
 }
 
 sub testLoadOptions {
-    plan( tests => 16 );
+    plan( tests => 20 );
 
     my %reqOpt = (
         'dbUser' => 'dummy', 'dbPassword' => 'dummy',
-        'dbHost' => 'host', 'dbSchema' => 'dummy', 'workflow_id' => 38
+        'dbHost' => 'host', 'dbSchema' => 'dummy', 'workflow_id' => 38,
+        'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+        'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
     );
 
     # --verbose only
@@ -803,7 +807,10 @@ sub testLoadOptions {
         my $message = 'Error if no --dbUser opt';
         my $obj = makeBam();
         my $optHR = {
-            'dbPassword' => 'dummy', 'dbHost' => 'host', 'dbSchema' => 'dummy'
+           'dbPassword' => 'dummy',
+           'dbHost' => 'host', 'dbSchema' => 'dummy',
+           'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+           'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
         };
         my $errorRE = qr/^--dbUser option required\./;
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
@@ -812,7 +819,10 @@ sub testLoadOptions {
         my $message = 'Error if no --dbPassword opt';
         my $obj = makeBam();
         my $optHR = {
-            'dbUser' => 'dummy', 'dbHost' => 'host', 'dbSchema' => 'dummy'
+            'dbUser' => 'dummy',
+            'dbHost' => 'host', 'dbSchema' => 'dummy',
+            'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
         };
         my $errorRE = qr/^--dbPassword option required\./;
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
@@ -821,7 +831,10 @@ sub testLoadOptions {
         my $message = 'Error if no --dbHost opt';
         my $obj = makeBam();
         my $optHR = {
-            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbSchema' => 'dummy'
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+            'dbSchema' => 'dummy',
+            'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
         };
         my $errorRE = qr/^--dbHost option required\./;
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
@@ -830,9 +843,60 @@ sub testLoadOptions {
         my $message = 'Error if no --dbSchema opt';
         my $obj = makeBam();
         my $optHR = {
-            'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host'
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+            'dbHost' => 'host',
+            'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
         };
         my $errorRE = qr/^--dbSchema option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --cghubSubmitExec opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+            'dbHost' => 'host', 'dbSchema' => 'dummy',
+            'cghubUploadExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
+        };
+        my $errorRE = qr/^--cghubSubmitExec option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --cghubUploadExec opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+            'dbHost' => 'host', 'dbSchema' => 'dummy',
+            'cghubSubmitExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
+        };
+        my $errorRE = qr/^--cghubUploadExec option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --cghubSubmitUrl opt';
+        my $obj = makeBam();
+        my $optHR = {
+            'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+            'dbHost' => 'host', 'dbSchema' => 'dummy',
+            'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+            'cghubSubmitCert' => 'dummy'
+        };
+        my $errorRE = qr/^--cghubSubmitUrl option required\./;
+        throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
+    }
+    {
+        my $message = 'Error if no --cghubSubmitCert opt';
+        my $obj = makeBam();
+        my $optHR = {
+                        'dbUser' => 'dummy', 'dbPassword' => 'dummy',
+            'dbHost' => 'host', 'dbSchema' => 'dummy',
+            'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy',
+        };
+        my $errorRE = qr/^--cghubSubmitCert option required\./;
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);
     }
     {
@@ -840,7 +904,9 @@ sub testLoadOptions {
         my $obj = makeBam();
         my $optHR = {
             'dbUser' => 'dummy', 'dbPassword' => 'dummy', 'dbHost' => 'host',
-            'dbSchema' => 'dummy', 'workflow_id' => 41
+            'dbSchema' => 'dummy', 'workflow_id' => 41,
+            'cghubSubmitExec' => 'dummy', 'cghubUploadExec' => 'dummy',
+            'cghubSubmitUrl' => 'dummy', 'cghubSubmitCert' => 'dummy'
         };
         my $errorRE = qr/^--workflow_id must be 38, 39, or 40\./;
         throws_ok( sub { $obj->loadOptions($optHR); }, $errorRE, $message);

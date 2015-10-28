@@ -271,6 +271,33 @@ will be repeated.
 
 =back
 
+=head2 Options controlling cgHub paramters
+
+=over 3
+
+=item --cghubsubmitexec [EXEC]
+
+The executable used to submit cghub meta-data, probably something like
+"/usr/bin/cgsubmit"
+
+=item --cghubUploadExec [EXEC]
+
+The executable used to submit data files to cgHub, probably something like
+"/usr/bin/gtupload"
+
+=item --cghubSubmitUrl [URL]
+
+The website to submit cgHub uploads to, probably something like
+"https://cghub.ucsc.edu/"
+
+=item --cghubSubmitUrl [FILE]
+
+The key file used for access. This expires reqularly and needs to be
+downloaded from cghub. Shhh. It is a secret. Probably something like:
+"/secure/tcga/CGHUB/Key.20151006/cghub.key"
+
+=back
+
 =cut
 
 =head1 CONFIG FILE
@@ -352,7 +379,11 @@ this is not part of the API. You have been warned :)
 This application mostly just runs code in the main application module,
 Bio::SeqWare::Uploads::CgHub::Bam.
 
+=cut
+
 =head1 SEE ALSO
 
 This is part of the p5-Bio-SeqWare-Uploads-CgHub-Bam distribution. The main
 documentation is the Bio::SeqWare::Uploads::CgHub::Bam module POD.
+
+=cut
